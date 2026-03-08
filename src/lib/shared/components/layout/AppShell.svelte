@@ -4,68 +4,74 @@
   let { children } = $props();
 
   let isDarkMode = $state(false);
-  let isMenuOpen = $state(false); // بۆ ڤەکرنا مێنویێ ل سەر مۆبایلێ
+  const isActive = (path: string) => page.url.pathname === path;
 
-  function toggleMenu() { isMenuOpen = !isMenuOpen; }
-  function closeMenu() { isMenuOpen = false; }
+  function handleLogout() {
+    localStorage.removeItem("isLoggedIn");
+    goto("/login");
+  }
 </script>
 
-<div class="main-layout {isDarkMode ? 'dark-mode' : ''}">
-  
-  <!-- دوگمێ مێنویێ (بتنێ ل سەر مۆبایلێ دیار دبیت) -->
-  <button class="mobile-toggle" onclick={toggleMenu}>
-    {isMenuOpen ? '✕' : '☰'}
-  </button>
-
-  <!-- Sidebar (دگەل گۆهۆڕینا مۆبایلێ) -->
-  <aside class="sidebar {isMenuOpen ? 'open' : ''}">
-    <div class="logo">E-CLINIC</div>
-    <nav class="nav-links">
-      <a href="/" onclick={closeMenu} class="nav-item">🏠 Dashboard</a>
-      <a href="/patients" onclick={closeMenu} class="nav-item">👥 Patients</a>
-      <a href="/appointments" onclick={closeMenu} class="nav-item">📅 Appointments</a>
-      <a href="/pharmacy" onclick={closeMenu} class="nav-item">💊 Pharmacy</a>
+<div class="main-app {isDarkMode ? 'dark-mode' : ''}">
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="logo">E-CLINIC 🏥</div>
+    
+    <nav class="nav-menu">
+      <a href="/" class="nav-item {isActive('/') ? 'active' : ''}">
+        <span class="icon">🏠</span> <span class="text">Dashboard</span>
+      </a>
+      <a href="/patients" class="nav-item {isActive('/patients') ? 'active' : ''}">
+        <span class="icon">👥</span> <span class="text">Patients</span>
+      </a>
+      <a href="/appointments" class="nav-item {isActive('/appointments') ? 'active' : ''}">
+        <span class="icon">📅</span> <span class="text">Appointments</span>
+      </a>
+      <a href="/pharmacy" class="nav-item {isActive('/pharmacy') ? 'active' : ''}">
+        <span class="icon">💊</span> <span class="text">Pharmacy</span>
+      </a>
     </nav>
-    <div class="footer">
-        <button onclick={() => isDarkMode = !isDarkMode} class="theme-btn">Theme</button>
+
+    <div class="sidebar-footer">
+      <button onclick={() => isDarkMode = !isDarkMode} class="btn-theme">
+        {isDarkMode ? '☀️ Light' : '🌙 Dark'}
+      </button>
+      <button onclick={handleLogout} class="btn-logout">🚪 Logout</button>
     </div>
   </aside>
 
-  <!-- بانسەرێ (Overlay) بۆ مۆبایلێ -->
-  {#if isMenuOpen}
-    <div class="overlay" onclick={closeMenu}></div>
-  {/if}
-
-  <div class="content-wrapper">
-    <main class="page-content">
-      {@render children?.()}
+  <!-- Main Content -->
+  <div class="content">
+    <main class="page-body">
+        {@render children?.()}
     </main>
   </div>
 </div>
 
 <style>
-  /* ستایلێ لابتۆپێ (وەکی مە بەرێ چێکری) */
-  .main-layout { display: flex; height: 100vh; overflow: hidden; }
-  .sidebar { width: 260px; background: #111827; color: white; display: flex; flex-direction: column; padding: 20px; transition: 0.3s; z-index: 100; }
-  .content-wrapper { flex: 1; background: #f3f4f6; overflow-y: auto; }
-  .mobile-toggle { display: none; } /* ل سەر لابتۆپێ ڤەشارتییە */
+  .main-app { display: flex; height: 100vh; font-family: 'Segoe UI', sans-serif; background: #f3f4f6; }
+  .sidebar { width: 260px; background: #111827; color: white; display: flex; flex-direction: column; padding: 20px; transition: 0.3s; }
+  .logo { font-size: 1.5rem; font-weight: bold; color: #6366f1; text-align: center; margin-bottom: 30px; border-bottom: 1px solid #374151; padding-bottom: 20px; }
+  
+  .nav-menu { display: flex; flex-direction: column; gap: 10px; flex: 1; }
+  .nav-item { color: #d1d5db; text-decoration: none; padding: 12px 15px; border-radius: 10px; display: flex; align-items: center; gap: 12px; transition: 0.2s; }
+  .nav-item:hover { background: #1f2937; color: white; }
+  .nav-item.active { background: #4f46e5; color: white; font-weight: bold; }
 
-  /* ستایلێ مۆبایلێ (Responsive) */
+  .sidebar-footer { display: flex; flex-direction: column; gap: 10px; margin-top: auto; }
+  .btn-theme, .btn-logout { padding: 10px; border-radius: 8px; border: none; cursor: pointer; font-weight: bold; }
+  .btn-theme { background: #374151; color: white; }
+  .btn-logout { background: #ef4444; color: white; }
+
+  .content { flex: 1; overflow-y: auto; padding: 25px; }
+
+  /* Dark Mode Support */
+  .dark-mode { background: #0f172a; color: white; }
+  .dark-mode .sidebar { background: #020617; }
+  
   @media (max-width: 768px) {
-    .mobile-toggle { 
-        display: block; position: fixed; top: 15px; left: 15px; 
-        z-index: 200; background: #4f46e5; color: white; border: none; 
-        padding: 10px 15px; border-radius: 8px; font-size: 1.2rem;
-    }
-    .sidebar { 
-        position: fixed; left: -260px; height: 100%; width: 260px; 
-    }
-    .sidebar.open { left: 0; } /* نیشاندانا مێنویێ دەما کلیک لێ دکەی */
-    .overlay { 
-        position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
-        background: rgba(0,0,0,0.5); z-index: 50; 
-    }
+    .sidebar { width: 80px; padding: 10px; }
+    .text { display: none; }
+    .logo { font-size: 1rem; }
   }
-
-  /* ... ستایلێن دی یێن تە یێن بەرێ ... */
 </style>
