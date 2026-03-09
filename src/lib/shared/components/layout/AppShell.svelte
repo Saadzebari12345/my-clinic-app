@@ -41,6 +41,9 @@
       {#if role === 'admin'}
         <a href="/register" class="nav-item {isActive('/register') ? 'active' : ''}" style="background: #065f46; margin-top: 10px;">➕ Create Account</a>
       {/if}
+      {#if role === 'admin'}
+  <a href="/register" class="nav-item">➕ Create Account</a>
+{/if}
     </nav>
 
     <div class="sidebar-footer">
@@ -54,41 +57,26 @@
     {@render children?.()}
   </div>
 </div>
-
 <style>
   :global(body) { margin: 0; padding: 0; transition: 0.3s; }
-  
-  /* ستایلێ متغیران بۆ چارەسەرکرنا Dark Mode */
   .main-app { 
     display: flex; height: 100vh; 
-    --bg: #f3f4f6; --text: #1e293b; --card: #ffffff; --border: #e2e8f0; --input-bg: #ffffff;
+    --bg: #f3f4f6; --text: #1e293b; --card: #ffffff; --border: #ddd;
   }
   .main-app.dark-mode { 
-    --bg: #0f172a; --text: #f8fafc; --card: #1e293b; --border: #334155; --input-bg: #334155;
+    --bg: #0f172a; --text: #f8fafc; --card: #1e293b; --border: #334155;
   }
 
-  .sidebar { width: 250px; background: #111827; color: white; padding: 20px; display: flex; flex-direction: column; }
-  .logo { font-size: 1.5rem; font-weight: bold; color: #6366f1; text-align: center; margin-bottom: 5px; }
-  .doc-info { text-align: center; font-size: 0.8rem; color: #94a3b8; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 1px solid #334155; }
+  /* گرنگترین پشک بۆ دیارکرنا نڤیسینێ */
+  :global(.dark-mode h1, .dark-mode h2, .dark-mode h3, .dark-mode p, 
+          .dark-mode td, .dark-mode th, .dark-mode label, .dark-mode span) {
+    color: #f8fafc !important;
+  }
+
+  .content { flex: 1; background: var(--bg); padding: 25px; overflow-y: auto; }
   
-  .nav-menu { flex: 1; display: flex; flex-direction: column; gap: 8px; }
-  .nav-item { color: #cbd5e1; text-decoration: none; padding: 12px; border-radius: 8px; transition: 0.2s; display: flex; align-items: center; gap: 10px; }
+  /* ستایلێ مێنویێ لایێ چەپێ */
+  .sidebar { width: 250px; background: #111827; color: white; padding: 20px; display: flex; flex-direction: column; }
+  .nav-item { color: #cbd5e1; text-decoration: none; padding: 12px; border-radius: 8px; margin-bottom: 5px; display: block; }
   .nav-item.active { background: #4f46e5; color: white; }
-
-  .content { flex: 1; background: var(--bg); color: var(--text); padding: 25px; overflow-y: auto; }
-
-  .sidebar-footer { display: flex; flex-direction: column; gap: 8px; }
-  .btn-theme, .btn-logout, .btn-switch { padding: 10px; border-radius: 8px; border: none; cursor: pointer; font-weight: bold; }
-  .btn-switch { background: #374151; color: white; }
-  .btn-logout { background: #ef4444; color: white; }
-
-  /* چارەسەرکرنا هەمی نڤیسین و فۆرمان د Dark Mode دا */
-  :global(h2, h3, h1, label, p, span, td, th) { color: var(--text) !important; }
-  :global(input, select, textarea) { 
-    background-color: var(--input-bg) !important; 
-    color: var(--text) !important; 
-    border: 1px solid var(--border) !important;
-    padding: 10px; border-radius: 8px;
-  }
-  :global(.card, .table-container) { background-color: var(--card) !important; border: 1px solid var(--border) !important; }
 </style>
