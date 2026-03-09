@@ -1,91 +1,103 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { supabase } from '$lib/supabaseClient';
+ import { onMount } from 'svelte';
+ import { supabase } from '$lib/supabaseClient';
 
-  let patients = $state([]);
-  let newName = $state("");
-  let newAge = $state("");
-  let newIllness = $state("");
+ // ١. پێناسەیا نەخۆشی دا TypeScript تێنەگەهیت کو لیستە یا ڤالایە
+ interface Patient {
+  id: number;
+  name: string;
+  age: number;
+  gender: string;
+  phone: string;
+  doctor_id: number;
+ }
 
-  // وەرگرتنا داتایان ژ داتابەیسا ئۆنلاین
-  async function fetchPatients() {
-    const { data, error } = await supabase
-      .from('patients')
-      .select('*')
-      .order('id', { ascending: false });
-    
-    if (data) {
-        patients = data;
-    } else if (error) {
-        console.error("Error fetching:", error.message);
-    }
+ let patients = $state<Patient[]>([]); // لێرە مە کێشا 'never' چارەسەر کر
+ let name = $state(''), age = $state(''), gender = $state('Male'), phone = $state('');
+ let doctorId = $state(0);
+
+ onMount(async () => {
+  doctorId = Number(localStorage.getItem('doctor_id'));
+  fetchPatients();
+ });
+
+ async function fetchPatients() {
+  const { data } = await supabase
+   .from('patients')
+   .select('*')
+   .eq('doctor_id', doctorId)
+   .order('id', { ascending: false });
+  if (data) patients = data;
+ }
+
+ async function addPatient() {
+  if (name && phone) {
+   await supabase.from('patients').insert([{ 
+    name, 
+    age: Number(age), 
+    gender, 
+    phone, 
+    doctor_id: doctorId 
+   }]);
+   name = ''; age = ''; phone = '';
+   fetchPatients();
   }
+ }
 
-  onMount(() => {
-    fetchPatients();
-  });
-
-  // زێدەکرنا نەخۆشەکێ نوی
-  async function addPatient() {
-    if (newName && newAge) {
-      const { error } = await supabase
-        .from('patients')
-        .insert([{ name: newName, age: parseInt(newAge), illness: newIllness }]);
-      
-      if (!error) {
-        newName = ""; newAge = ""; newIllness = "";
-        fetchPatients(); 
-      } else {
-        alert("Error adding: " + error.message);
-      }
-    }
+ async function deletePatient(id: number) { // لێرە مە جۆرێ ئایدیێ دیار کر
+  if (confirm('Are you sure?')) {
+   await supabase.from('patients').delete().eq('id', id);
+   fetchPatients();
   }
-
-  // ژێبرنا نەخۆشی
-  async function deletePatient(id) {
-    if(confirm("Are you sure?")) {
-      const { error } = await supabase
-        .from('patients')
-        .delete()
-        .eq('id', id);
-      
-      if (!error) fetchPatients();
-    }
-  }
+ }
 </script>
 
-<div style="color: inherit;">
-  <h2 style="margin-bottom: 20px;">🌍 Online Patient Directory</h2>
+<h2>👥 Patients Directory</h2>
 
-  <div style="background: white; padding: 20px; border-radius: 12px; margin-bottom: 30px; border: 1px solid #ddd; display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap;">
-    <input bind:value={newName} placeholder="Name" style="padding: 10px; border-radius: 8px; border: 1px solid #ccc; flex: 1;" />
-    <input bind:value={newAge} type="number" placeholder="Age" style="width: 80px; padding: 10px; border-radius: 8px; border: 1px solid #ccc;" />
-    <input bind:value={newIllness} placeholder="Illness" style="padding: 10px; border-radius: 8px; border: 1px solid #ccc; flex: 1;" />
-    <button onclick={addPatient} style="background: #4f46e5; color: white; border: none; padding: 11px 25px; border-radius: 8px; cursor: pointer;">+ Add Online</button>
-  </div>
+<div class="card" style="padding: 20px; margin-bottom: 20px; display: flex; gap: 10px; flex-wrap: wrap; background: white; border-radius: 12px; border: 1px solid #ddd;">
+ <div style="flex: 2;">
+  <label for="p-name" style="display: block; font-size: 0.8rem; margin-bottom: 4px;">Full Name</label>
+  <input id="p-name" bind:value={name} placeholder="Name" style="width: 100%;" />
+ </div>
+ <div style="width: 70px;">
+  <label for="p-age" style="display: block; font-size: 0.8rem; margin-bottom: 4px;">Age</label>
+  <input id="p-age" bind:value={age} type="number" style="width: 100%;" />
+ </div>
+ <div>
+  <label for="p-gender" style="display: block; font-size: 0.8rem; margin-bottom: 4px;">Gender</label>
+  <select id="p-gender" bind:value={gender} style="width: 100px;">
+   <option value="Male">Male</option>
+   <option value="Female">Female</option>
+  </select>
+ </div>
+ <div style="flex: 1;">
+  <label for="p-phone" style="display: block; font-size: 0.8rem; margin-bottom: 4px;">Phone</label>
+  <input id="p-phone" bind:value={phone} placeholder="0750..." style="width: 100%;" />
+ </div>
+ <button onclick={addPatient} style="background: #4f46e5; color: white; padding: 10px 20px; border-radius: 8px; border: none; cursor: pointer; align-self: flex-end;">+ Add</button>
+</div>
 
-  <div style="background: white; border-radius: 12px; overflow: hidden; border: 1px solid #ddd;">
-    <table style="width: 100%; border-collapse: collapse;">
-      <thead>
-        <tr style="background: #f8fafc; text-align: left;">
-          <th style="padding: 15px; border-bottom: 2px solid #eee;">Name</th>
-          <th style="padding: 15px; border-bottom: 2px solid #eee;">Age</th>
-          <th style="padding: 15px; border-bottom: 2px solid #eee; text-align: center;">Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        {#each patients as p}
-          <tr style="border-bottom: 1px solid #eee;">
-            <td style="padding: 15px; font-weight: bold;">{p.name}</td>
-            <td style="padding: 15px;">{p.age}</td>
-            <td style="padding: 15px; text-align: center;">
-              <button onclick={() => deletePatient(p.id)} style="background: #fee2e2; color: #dc2626; border: none; padding: 6px 12px; cursor: pointer; border-radius: 6px;">🗑️ Delete</button>
-            </td>
-          </tr>
-        {:else}
-           <tr><td colspan="3" style="padding: 20px; text-align: center;">No data found...</td></tr>
-        {/each}
-      </tbody>
-    </table>
-  </div>
+<div class="table-container" style="background: white; border-radius: 12px; overflow: hidden; border: 1px solid #ddd;">
+ <table style="width: 100%; border-collapse: collapse;">
+  <thead style="background: #f8fafc;">
+   <tr>
+    <th style="padding: 15px; text-align: left;">Name</th>
+    <th style="padding: 15px; text-align: left;">Age</th>
+    <th style="padding: 15px; text-align: left;">Phone</th>
+    <th style="padding: 15px; text-align: center;">Action</th>
+   </tr>
+  </thead>
+  <tbody>
+   {#each patients as p}
+    <tr style="border-bottom: 1px solid #eee;">
+     <td style="padding: 15px; font-weight: bold;">{p.name}</td>
+     <td style="padding: 15px;">{p.age}</td>
+     <td style="padding: 15px;">{p.phone}</td>
+     <td style="padding: 15px; text-align: center;">
+      <button onclick={() => deletePatient(p.id)} style="color: #ef4444; background: none; border: none; cursor: pointer;">🗑️</button>
+     </td>
+    </tr>
+   {/each}
+  </tbody>
+ </table>
 </div>
