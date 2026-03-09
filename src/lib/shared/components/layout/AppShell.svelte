@@ -30,6 +30,9 @@
       <a href="/pharmacy" class="nav-item {isActive('/pharmacy') ? 'active' : ''}">
         <span class="icon">💊</span> <span class="text">Pharmacy</span>
       </a>
+      <a href="/settings" class="nav-item {isActive('/settings') ? 'active' : ''}">
+       <span class="icon">⚙️</span> Settings
+       </a>
     </nav>
 
     <div class="sidebar-footer">

@@ -6,12 +6,14 @@
   let errorMessage = $state("");
 
   function handleLogin() {
-    // ئەڤە ناڤ و پاسوۆردێ تە یێ دەستپێکێ یە (دشێی بگۆهۆڕی)
-    if (username === "admin" && password === "12345") {
+    const savedUser = localStorage.getItem("admin_user") || "admin";
+    const savedPass = localStorage.getItem("admin_pass") || "12345";
+
+    if (username === savedUser && password === savedPass) {
       localStorage.setItem("isLoggedIn", "true");
-      goto("/"); // برنا بەکارهێنەری بۆ داشبۆردێ
+      goto("/");
     } else {
-      errorMessage = "❌ ناڤ یان پاسوۆرد خەلەتە!";
+      errorMessage = "❌ ناڤ یان پاسوۆرد خه‌له‌ته‌!";
     }
   }
 </script>
@@ -21,20 +23,21 @@
     <h2 style="text-align: center; color: #4f46e5; margin-bottom: 30px;">E-Clinic Login</h2>
     
     <div style="margin-bottom: 20px;">
-      <label style="display: block; font-size: 0.9rem; margin-bottom: 5px; color: #64748b;">Username</label>
-      <input bind:value={username} type="text" style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #ddd; box-sizing: border-box;" />
+      <!-- لێره‌ 'for' و 'id' هه‌مان ناڤن دا پێكڤه‌ گرێبده‌ن -->
+      <label for="login-user" style="display: block; font-size: 0.9rem; margin-bottom: 5px; color: #64748b;">Username</label>
+      <input id="login-user" bind:value={username} type="text" style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #ddd; box-sizing: border-box;" />
     </div>
 
     <div style="margin-bottom: 25px;">
-      <label style="display: block; font-size: 0.9rem; margin-bottom: 5px; color: #64748b;">Password</label>
-      <input bind:value={password} type="password" style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #ddd; box-sizing: border-box;" />
+      <label for="login-pass" style="display: block; font-size: 0.9rem; margin-bottom: 5px; color: #64748b;">Password</label>
+      <input id="login-pass" bind:value={password} type="password" style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #ddd; box-sizing: border-box;" />
     </div>
 
     {#if errorMessage}
       <p style="color: #ef4444; font-size: 0.8rem; text-align: center; margin-bottom: 15px;">{errorMessage}</p>
     {/if}
 
-    <button onclick={handleLogin} style="width: 100%; background: #4f46e5; color: white; border: none; padding: 13px; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 1rem;">
+    <button onclick={handleLogin} style="width: 100%; background: #4f46e5; color: white; border: none; padding: 13px; border-radius: 8px; cursor: pointer; font-weight: bold;">
       Log In
     </button>
   </div>
