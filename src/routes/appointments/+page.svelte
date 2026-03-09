@@ -2,7 +2,6 @@
  import { onMount } from 'svelte';
  import { supabase } from '$lib/supabaseClient';
 
- interface Patient { name: string; }
  interface Appointment {
   id: number;
   patient_name: string;
@@ -11,22 +10,33 @@
   doctor_id: number;
  }
 
- let patients = $state<Patient[]>([]);
  let appointments = $state<Appointment[]>([]);
+ let patients = $state<{ name: string }[]>([]);
+ let searchTerm = $state('');
  let selectedPatient = $state('');
  let appointmentDate = $state('');
  let doctorId = $state(0);
- let isLoading = $state(false);
+ let now = $state(new Date());
 
- // ١. وەرگرتنا داتایان ژ Supabase
+ // ١. حسابکرنا ئاماران ب شێوەیەکێ داینامیکی
+ let stats = $derived({
+  done: appointments.filter(a => a.status === 'Done').length,
+  waiting: appointments.filter(a => a.status === 'Pending' || a.status === 'Confirmed').length,
+  overdue: appointments.filter(a => a.status !== 'Done' && new Date(a.date) < now).length
+ });
+
+ // ٢. فلتەرکرنا لیستا ژڤانان بۆ لێگەڕیانێ (Search)
+ let filteredApps = $derived(
+  appointments.filter(a => a.patient_name.toLowerCase().includes(searchTerm.toLowerCase()))
+ );
+
  async function fetchData() {
   if (!doctorId) return;
-
-  // ئینانا ناڤێن پاتێنتان بۆ Select
+  // ئینانا پاتێنتان
   const { data: pData } = await supabase.from('patients').select('name').eq('doctor_id', doctorId);
   if (pData) patients = pData;
 
-  // ئینانا ژڤانان بۆ خشتەی
+  // ئینانا ژڤانان
   const { data: aData } = await supabase.from('appointments').select('*').eq('doctor_id', doctorId).order('date', { ascending: true });
   if (aData) appointments = aData;
  }
@@ -37,32 +47,26 @@
    doctorId = Number(storedId);
    fetchData();
   }
+  // نووژەنکرنا دەمێ نوکە هەر خولەکەکێ دا Overdue درست بیت
+  const interval = setInterval(() => now = new Date(), 60000);
+  return () => clearInterval(interval);
  });
 
- // ٢. فانکشنا زێدەکرنا ژڤانی (ئەوا کار نەدکر)
  async function addAppointment() {
   if (selectedPatient && appointmentDate && doctorId) {
-   isLoading = true;
    const { error } = await supabase.from('appointments').insert([
-    {
-     patient_name: selectedPatient,
-     date: appointmentDate,
-     status: 'Pending',
-     doctor_id: doctorId
-    }
+    { patient_name: selectedPatient, date: appointmentDate, status: 'Pending', doctor_id: doctorId }
    ]);
-
    if (!error) {
-    selectedPatient = '';
-    appointmentDate = '';
-    await fetchData(); // نووژەنکرنا لیستا خوارێ ب ڕاستەوخۆ
-   } else {
-    alert("Error: " + error.message);
+    selectedPatient = ''; appointmentDate = '';
+    fetchData();
    }
-   isLoading = false;
-  } else {
-   alert("تکایە نەخۆشەکێ و کاتەکێ هەلبژێره");
   }
+ }
+
+ async function updateStatus(id: number, newStatus: string) {
+  await supabase.from('appointments').update({ status: newStatus }).eq('id', id);
+  fetchData();
  }
 
  async function deleteApp(id: number) {
@@ -71,49 +75,69 @@
    fetchData();
   }
  }
+
+ // فانکشنەک بۆ پشکنینا کا ژڤان یێ دەربازبوویە (Overdue)
+ function isOverdue(dateStr: string, status: string) {
+  return status !== 'Done' && new Date(dateStr) < now;
+ }
 </script>
 
-<div class="appointments-page">
- <h2 style="color: var(--text);">📅 Appointments Management</h2>
-
- <div class="input-card">
-  <div style="flex: 1; min-width: 200px;">
-   <label for="p-select" style="display: block; font-size: 0.8rem; margin-bottom: 5px; font-weight: bold;">Select Patient</label>
-   <select id="p-select" bind:value={selectedPatient} style="width: 100%;">
-    <option value="">-- Choose Patient --</option>
-    {#each patients as p}
-     <option value={p.name}>{p.name}</option>
-    {/each}
-   </select>
+<div class="appointments-container">
+ <div class="header-flex">
+  <h2>📅 Appointments Tracking</h2>
+  <div class="stats-grid">
+   <div class="stat-box done">✅ Done: {stats.done}</div>
+   <div class="stat-box waiting">⏳ Waiting: {stats.waiting}</div>
+   <div class="stat-box overdue">⚠️ Overdue: {stats.overdue}</div>
   </div>
-
-  <div style="flex: 1; min-width: 200px;">
-   <label for="a-date" style="display: block; font-size: 0.8rem; margin-bottom: 5px; font-weight: bold;">Date & Time</label>
-   <input id="a-date" type="datetime-local" bind:value={appointmentDate} style="width: 100%;" />
-  </div>
-
-  <button onclick={addAppointment} disabled={isLoading} style="height: 45px; align-self: flex-end;">
-   {isLoading ? '...' : 'Book Now'}
-  </button>
  </div>
 
- <div class="table-container">
+ <!-- بەشێ زێدەکرنێ -->
+ <div class="card add-card">
+  <select bind:value={selectedPatient}>
+   <option value="">-- Choose Patient --</option>
+   {#each patients as p}
+    <option value={p.name}>{p.name}</option>
+   {/each}
+  </select>
+  <input type="datetime-local" bind:value={appointmentDate} />
+  <button class="btn-add" onclick={addAppointment}>Book Now</button>
+ </div>
+
+ <!-- بەشێ لێگەڕیانێ (Search) -->
+ <div class="search-box">
+  <input bind:value={searchTerm} placeholder="🔍 Search by patient name..." />
+ </div>
+
+ <!-- خشتەیێ ژڤانان -->
+ <div class="table-card">
   <table>
    <thead>
     <tr>
-     <th>Patient Name</th><th>Date & Time</th><th>Status</th><th>Action</th>
+     <th>Patient Name</th>
+     <th>Date & Time</th>
+     <th>Status</th>
+     <th style="text-align: center;">Actions</th>
     </tr>
    </thead>
    <tbody>
-    {#each appointments as app}
-     <tr>
-      <td style="font-weight: bold;">👤 {app.patient_name}</td>
+    {#each filteredApps as app}
+     <tr class={isOverdue(app.date, app.status) ? 'overdue-row' : ''}>
+      <td class="p-name" style="color: {isOverdue(app.date, app.status) ? '#ef4444' : 'inherit'}">
+       {isOverdue(app.date, app.status) ? '🔴 ' : '👤 '} {app.patient_name}
+      </td>
       <td>{new Date(app.date).toLocaleString()}</td>
-      <td><span class="status-badge">{app.status}</span></td>
-      <td><button onclick={() => deleteApp(app.id)} class="del-btn">🗑️</button></td>
+      <td>
+       <span class="badge {app.status}">{app.status}</span>
+      </td>
+      <td class="actions">
+       <button class="btn-confirm" onclick={() => updateStatus(app.id, 'Confirmed')}>🔵 Confirm</button>
+       <button class="btn-done" onclick={() => updateStatus(app.id, 'Done')}>✅ Done</button>
+       <button class="btn-del" onclick={() => deleteApp(app.id)}>🗑️</button>
+      </td>
      </tr>
     {:else}
-     <tr><td colspan="4" style="text-align: center; padding: 30px; color: #888;">No appointments found.</td></tr>
+     <tr><td colspan="4" style="text-align: center; padding: 30px;">No appointments found.</td></tr>
     {/each}
    </tbody>
   </table>
@@ -121,12 +145,39 @@
 </div>
 
 <style>
- .input-card { background: var(--card, white); padding: 25px; border-radius: 15px; border: 1px solid var(--border, #ddd); display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 30px; }
- input, select { padding: 12px; border-radius: 10px; border: 1px solid var(--border, #ccc); background: var(--card, white); color: var(--text); }
- button { background: #4f46e5; color: white; border: none; padding: 0 30px; border-radius: 10px; cursor: pointer; font-weight: bold; }
- .table-container { background: var(--card, white); border-radius: 15px; border: 1px solid var(--border, #ddd); overflow: hidden; }
+ .header-flex { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; flex-wrap: wrap; gap: 15px; }
+ .stats-grid { display: flex; gap: 10px; }
+ .stat-box { padding: 10px 15px; border-radius: 10px; font-weight: bold; font-size: 0.85rem; border: 1px solid rgba(0,0,0,0.1); }
+ .done { background: #dcfce7; color: #166534; }
+ .waiting { background: #fef3c7; color: #92400e; }
+ .overdue { background: #fee2e2; color: #dc2626; }
+
+ .add-card { display: flex; gap: 10px; padding: 20px; background: var(--card, white); border-radius: 15px; border: 1px solid var(--border, #ddd); margin-bottom: 20px; flex-wrap: wrap; }
+ .add-card select, .add-card input { flex: 1; padding: 10px; border-radius: 8px; border: 1px solid #ccc; background: var(--card, white); color: inherit; }
+ .btn-add { background: #4f46e5; color: white; border: none; padding: 10px 25px; border-radius: 8px; cursor: pointer; font-weight: bold; }
+
+ .search-box { margin-bottom: 15px; }
+ .search-box input { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #4f46e5; background: var(--card, white); color: inherit; outline: none; }
+
+ .table-card { background: var(--card, white); border-radius: 15px; border: 1px solid var(--border, #ddd); overflow: hidden; }
  table { width: 100%; border-collapse: collapse; }
- th, td { padding: 15px; text-align: left; border-bottom: 1px solid var(--border, #eee); color: var(--text); }
- .status-badge { background: #fef3c7; color: #92400e; padding: 4px 10px; border-radius: 20px; font-size: 0.8rem; font-weight: bold; }
- .del-btn { background: #fee2e2; color: #ef4444; border: none; padding: 8px; border-radius: 8px; cursor: pointer; }
+ th, td { padding: 15px; text-align: left; border-bottom: 1px solid var(--border, #eee); }
+ 
+ .overdue-row { background: rgba(239, 68, 68, 0.05); }
+ .p-name { font-weight: bold; }
+
+ .badge { padding: 4px 10px; border-radius: 20px; font-size: 0.75rem; font-weight: bold; }
+ .badge.Pending { background: #fef3c7; color: #92400e; }
+ .badge.Confirmed { background: #e0f2fe; color: #0369a1; }
+ .badge.Done { background: #dcfce7; color: #166534; }
+
+ .actions { display: flex; gap: 5px; justify-content: center; }
+ .actions button { padding: 6px 10px; border: none; border-radius: 6px; cursor: pointer; font-size: 0.75rem; font-weight: bold; }
+ .btn-confirm { background: #e0f2fe; color: #0369a1; }
+ .btn-done { background: #10b981; color: white; }
+ .btn-del { background: #fee2e2; color: #dc2626; }
+
+ /* Dark Mode Fixes */
+ :global(.dark-mode) .stat-box { border-color: #334155; }
+ :global(.dark-mode) .overdue-row { background: rgba(239, 68, 68, 0.15); }
 </style>
