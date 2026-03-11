@@ -3,7 +3,6 @@
  import { onMount } from 'svelte';
  import { supabase } from '$lib/supabaseClient';
 
- // پێناسەکردنی جۆری داتاکان بۆ ئەوەی هێڵی سوور نەمێنێت
  interface Patient { name: string; age: number; phone: string; gender: string; }
  interface MedicalRecord { id: number; diagnosis: string; treatment: string; notes: string; created_at: string; }
 
@@ -15,98 +14,131 @@
  let diagnosis = $state(''), treatment = $state(''), notes = $state('');
  let isSaving = $state(false);
 
- async function loadData() {
+ // ١. فانکشنا ئینانا تاریخا پزیشکی (گەلەک گرنگە)
+ async function loadHistory() {
+  console.log("Fetching history for patient:", patientId);
+  
+  const { data, error } = await supabase
+   .from('medical_records')
+   .select('*')
+   .eq('patient_id', patientId) // دڤێت ئەڤ ناڤە ڕێک وەک داتابەیسێ بیت
+   .order('created_at', { ascending: false });
+  
+  if (error) {
+   console.error("Supabase Fetch Error:", error.message);
+  } else {
+   console.log("Records found:", data);
+   records = data || []; // نووژەنکرنا لیستا لایێ ڕاستێ
+  }
+ }
+
+ async function loadPatientInfo() {
+  const { data } = await supabase.from('patients').select('*').eq('id', patientId).single();
+  if (data) patientInfo = data;
+ }
+
+ onMount(async () => {
   const storedId = localStorage.getItem('doctor_id');
   if (storedId) doctorId = Number(storedId);
 
-  // وەرگرتنی زانیاری نەخۆش
-  const { data: p } = await supabase.from('patients').select('*').eq('id', patientId).single();
-  if (p) patientInfo = p;
+  await loadPatientInfo();
+  await loadHistory();
+ });
 
-  // وەرگرتنی مێژووی پزیشکی
-  const { data: r } = await supabase.from('medical_records')
-   .select('*')
-   .eq('patient_id', patientId)
-   .order('created_at', { ascending: false });
-  
-  if (r) records = r;
- }
-
- onMount(loadData);
-
+ // ٢. فانکشنا زێدەکرنا ڕاپۆرتا نوی
  async function addRecord() {
-  if (!diagnosis || !treatment) return alert("تکایە خانەکان پڕ بکەرەوە");
+  if (!diagnosis || !treatment) return alert("تکایە خانەیان پڕ بکە");
   
   isSaving = true;
-  const { error } = await supabase.from('medical_records').insert([{
+  const { data, error } = await supabase.from('medical_records').insert([{
    patient_id: Number(patientId),
    doctor_id: doctorId,
    diagnosis,
    treatment,
    notes
-  }]);
+  }]).select(); // ئەڤە داتایا نوو دزڤڕینیت
   
   if (!error) {
    diagnosis = ''; treatment = ''; notes = '';
-   await loadData(); // بۆ ئەوەی ڕاستەوخۆ دیار بێت لە لای ڕاست
+   // نووژەنکرنا لیستا لایێ ڕاستێ ب شێوازەکێ خێرا
+   if (data) {
+    records = [data[0], ...records];
+   }
   } else {
-   alert("Error: " + error.message);
+   alert("Error adding record: " + error.message);
   }
   isSaving = false;
  }
 </script>
 
 {#if patientInfo}
- <div style="max-width: 1200px; margin: 0 auto; color: var(--text);">
-  <header style="background: var(--card); padding: 20px; border-radius: 15px; border: 1px solid var(--border); margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
-   <div>
+ <div class="container">
+  <header class="card header-card">
+   <div class="p-info">
     <h1>👤 {patientInfo.name}</h1>
-    <p style="opacity: 0.8;">Age: {patientInfo.age} | Phone: {patientInfo.phone}</p>
+    <div class="meta">Age: {patientInfo.age} | Gender: {patientInfo.gender} | Phone: {patientInfo.phone}</div>
    </div>
-   <a href="/patients" style="text-decoration: none; background: #eee; padding: 10px 20px; border-radius: 8px; color: #333; font-weight: bold;">⬅ Back</a>
+   <a href="/patients" class="btn-back">⬅ Back</a>
   </header>
 
-  <div style="display: grid; grid-template-columns: 450px 1fr; gap: 20px;">
-   <!-- لای چەپ: فۆرمەکە -->
-   <div style="background: var(--card); padding: 25px; border-radius: 15px; border: 1px solid var(--border);">
+  <div class="grid">
+   <!-- لایێ چەپێ: فۆرم -->
+   <div class="card">
     <h3>📝 New Consultation</h3>
-    
-    <div style="margin-bottom: 15px;">
-     <label for="diag" style="display:block; font-weight:bold; margin-bottom:5px;">Diagnosis</label>
-     <input id="diag" bind:value={diagnosis} style="width:100%; padding:10px; border-radius:8px; border:1px solid #ccc; background: white; color: black;" />
+    <div class="field">
+     <label for="d">Diagnosis</label>
+     <input id="d" bind:value={diagnosis} placeholder="Enter condition..." />
     </div>
-
-    <div style="margin-bottom: 15px;">
-     <label for="treat" style="display:block; font-weight:bold; margin-bottom:5px;">Treatment</label>
-     <textarea id="treat" bind:value={treatment} style="width:100%; padding:10px; border-radius:8px; border:1px solid #ccc; height: 100px; background: white; color: black;"></textarea>
+    <div class="field">
+     <label for="t">Treatment</label>
+     <textarea id="t" bind:value={treatment} placeholder="Meds and dosage..."></textarea>
     </div>
-
-    <div style="margin-bottom: 15px;">
-     <label for="note" style="display:block; font-weight:bold; margin-bottom:5px;">Notes</label>
-     <textarea id="note" bind:value={notes} style="width:100%; padding:10px; border-radius:8px; border:1px solid #ccc; height: 60px; background: white; color: black;"></textarea>
+    <div class="field">
+     <label for="n">Doctor's Notes</label>
+     <textarea id="n" bind:value={notes} placeholder="Additional info..."></textarea>
     </div>
-
-    <!-- لێرەدا کێشەی دوگمەکە چارەسەر کراوە -->
-    <button onclick={addRecord} disabled={isSaving} style="width: 100%; padding: 12px; background: #4f46e5; color: white; border: none; border-radius: 10px; cursor: pointer; font-weight: bold;">
+    <button class="btn-save" onclick={addRecord} disabled={isSaving}>
      {isSaving ? 'Saving...' : '💾 Save Record'}
     </button>
    </div>
 
-   <!-- لای ڕاست: مێژووەکە -->
-   <div>
-    <h3 style="margin-top: 0;">📜 Medical History</h3>
-    {#each records as record (record.id)}<div style="background: var(--card); padding: 20px; border-radius: 12px; border: 1px solid var(--border); border-left: 5px solid #10b981; margin-bottom: 15px;">
-      <p style="font-size: 0.8rem; font-weight: bold; color: #10b981;">📅 {new Date(record.created_at).toLocaleDateString()}</p>
-      <h4 style="margin: 10px 0;">{record.diagnosis}</h4>
-      <p style="font-size: 0.9rem;"><b>Rx:</b> {record.treatment}</p>
-      {#if record.notes}<p style="margin-top: 10px; font-size: 0.8rem; opacity: 0.7;"><i>{record.notes}</i></p>{/if}
+   <!-- لایێ ڕاستێ: تاریخ -->
+   <div class="history">
+    <h3>📜 Medical History ({records.length})</h3>
+    {#each records as record (record.id)}
+     <div class="record-card card">
+      <div class="date">📅 {new Date(record.created_at).toLocaleDateString()}</div>
+      <h4>{record.diagnosis}</h4>
+      <p><b>Treatment:</b> {record.treatment}</p>
+      {#if record.notes}<p class="note"><i>{record.notes}</i></p>{/if}
      </div>
     {:else}
-     <div style="text-align: center; padding: 40px; border: 2px dashed var(--border); border-radius: 15px; opacity: 0.5;">No history found.</div>
+     <div class="empty">No records found. Add the first one!</div>
     {/each}
    </div>
   </div>
  </div>
-{:else}
- <div style="text-align: center; padding: 50px;">Loading patient info...</div>
 {/if}
+
+<style>
+ .container { max-width: 1200px; margin: 0 auto; color: var(--text); }
+ .card { background: var(--card, white); padding: 25px; border-radius: 15px; border: 1px solid var(--border, #ddd); margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+ .header-card { display: flex; justify-content: space-between; align-items: center; border-left: 6px solid #4f46e5; }
+ .grid { display: grid; grid-template-columns: 450px 1fr; gap: 20px; }
+ @media (max-width: 1000px) { .grid { grid-template-columns: 1fr; } }
+ 
+ .field { margin-bottom: 15px; }
+ label { display: block; font-weight: bold; margin-bottom: 5px; font-size: 0.85rem; }
+ input, textarea { width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #ccc; background: white; color: black; box-sizing: border-box; }
+ textarea { height: 80px; resize: none; }
+ 
+ .btn-save { width: 100%; padding: 14px; background: #4f46e5; color: white; border: none; border-radius: 10px; cursor: pointer; font-weight: bold; }
+ .btn-back { text-decoration: none; background: #f3f4f6; padding: 10px 15px; border-radius: 8px; color: #333; font-weight: bold; }
+
+ .record-card { border-left: 5px solid #10b981; margin-bottom: 15px; }
+ .date { font-size: 0.8rem; font-weight: bold; color: #10b981; margin-bottom: 10px; }
+ h4 { margin: 0 0 10px 0; font-size: 1.1rem; }
+ p { margin: 5px 0; font-size: 0.95rem; }
+ .note { opacity: 0.7; font-size: 0.85rem; margin-top: 10px; border-top: 1px dashed #ddd; padding-top: 10px; }
+ .empty { text-align: center; padding: 50px; border: 2px dashed #ddd; border-radius: 15px; opacity: 0.5; }
+</style>
