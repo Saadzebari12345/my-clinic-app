@@ -1,100 +1,105 @@
 <script lang="ts">
- import { page } from '$app/state';
+ import { page } from '$app/stores'; // مە ئەڤە گۆهۆڕی بۆ ستۆرێ فەرمی دا ئایدی درست بێت
  import { onMount } from 'svelte';
  import { supabase } from '$lib/supabaseClient';
 
- // ١. پێناسەکرنا جۆرێ داتایان
  interface Patient { id: number; name: string; age: number; phone: string; gender: string; }
  interface MedicalRecord { id: number; diagnosis: string; treatment: string; notes: string; created_at: string; }
 
- let patientId = page.params.id; // وەرگرتنا ئایدییا نەخۆشی ژ لینکی
+ // وەرگرتنا ئایدییا نەخۆشی ب ڕێکا ستۆرێ لاپەرەی
+ let patientId = $derived($page.params.id); 
+ 
  let doctorId = $state(0);
  let patientInfo = $state<Patient | null>(null);
- let records = $state<MedicalRecord[]>([]); // لیستا ڕاپۆرتان
+ let records = $state<MedicalRecord[]>([]);
  
  let diagnosis = $state(''), treatment = $state(''), notes = $state('');
  let isSaving = $state(false);
 
- // ٢. فانکشنا سەرەکی بۆ ئینانا داتایێن پاراستی ژ Supabase
- async function loadAllData() {
-  // وەرگرتنا ئایدییا دکتۆری ژ میشکێ بڕاوسەری
-  const storedId = localStorage.getItem('doctor_id');
-  if (storedId) {
-   doctorId = Number(storedId);
-  } else {
-   console.error("No doctor ID found!");
-   return;
-  }
+ // ١. فانکشنا ئینانا مێژوویا پزیشکی (Fetching Data)
+ async function loadMedicalHistory() {
+  if (!patientId) return;
 
-  // ئینانا زانیاریێن نەخۆشی
-  const { data: p } = await supabase.from('patients').select('*').eq('id', patientId).single();
-  if (p) patientInfo = p;
+  console.log("Searching history for patient ID:", patientId);
 
-  // ئینانا مێژوویا پزیشکی (ئەڤە ئەو بەشەیە یێ بەرزە دبوو)
-  // ئێمە لێرە مەرجێ patient_id بەکاردئینین دا ڕاپۆرتێن وی بتنێ بێین
-  const { data: r, error } = await supabase
+  const { data, error } = await supabase
    .from('medical_records')
    .select('*')
-   .eq('patient_id', Number(patientId))
+   .eq('patient_id', Number(patientId)) // مەرجە وەکی ژمارە بێتە فرێکرن
    .order('created_at', { ascending: false });
-  
+
   if (error) {
-   console.error("Error fetching history:", error.message);
-  } else if (r) {
-   records = r; // نووژەنکرنا لایێ ڕاستێ ب داتایێن داتابەیسێ
+   console.error("Fetch Error:", error.message);
+  } else {
+   records = data || [];
+   console.log("Records found:", records.length);
   }
  }
 
- // ئەڤە گرنگترین پشکە: هەر دەمێ لاپەرە ڤەببیت، دێ چیت داتایان ئینیت
- onMount(() => {
-  loadAllData();
+ // ٢. ئینانا زانیاریێن نەخۆشی (Name, Age, etc)
+ async function loadPatientInfo() {
+  const { data, error } = await supabase
+   .from('patients')
+   .select('*')
+   .eq('id', Number(patientId))
+   .single();
+  
+  if (data) patientInfo = data;
+ }
+
+ onMount(async () => {
+  const storedId = localStorage.getItem('doctor_id');
+  if (storedId) doctorId = Number(storedId);
+
+  await loadPatientInfo();
+  await loadMedicalHistory();
  });
 
- // ٣. فانکشنا زێدەکرنا ڕاپۆرتا نوی و سەیڤکرن بۆ هەتا هەتایێ
+ // ٣. فانکشنا زێدەکرنا ڕاپۆرتا نوی (Insert)
  async function addRecord() {
   if (!diagnosis || !treatment) return alert("تکایە خانەیان پڕ بکە");
   
   isSaving = true;
-  const { data, error } = await supabase.from('medical_records').insert([{
-   patient_id: Number(patientId),
+  const { error } = await supabase.from('medical_records').insert([{
+   patient_id: Number(patientId), // گرێدانا ڕاستەوخۆ ب نەخۆشی ڤە
    doctor_id: doctorId,
-   diagnosis,
-   treatment,
-   notes
-  }]).select(); // select() دێ داتایا نوی زڤڕینیتەڤە
+   diagnosis: diagnosis,
+   treatment: treatment,
+   notes: notes
+  }]);
   
-  if (!error && data) {
+  if (!error) {
    diagnosis = ''; treatment = ''; notes = '';
-   // زێدەکرنا ڕاپۆرتا نوی ل سەرێ لیستێ بێی ڕیفرێش
-   records = [data[0], ...records];
-   alert("✅ Record Saved Permanently!");
+   // دووبارە بارکرنا داتایان دا ئێکسەر دیار ببن
+   await loadMedicalHistory();
+   alert("✅ Record saved successfully!");
   } else {
-   alert("Error saving: " + error?.message);
+   alert("Error: " + error.message);
   }
   isSaving = false;
  }
 </script>
 
 {#if patientInfo}
- <div class="container">
-  <header class="card header-box">
+ <div class="profile-layout">
+  <header class="card header-card">
    <div class="p-info">
     <h1>👤 {patientInfo.name}</h1>
-    <div class="meta">Age: {patientInfo.age} | Phone: {patientInfo.phone}</div>
+    <p>Age: {patientInfo.age} | Phone: {patientInfo.phone}</p>
    </div>
-   <a href="/patients" class="back-link">⬅ Back to Patients</a>
+   <a href="/patients" class="btn-back">⬅ Back to Patients</a>
   </header>
 
   <div class="main-grid">
-   <!-- فۆرما نڤیسینێ (لایێ چەپێ) -->
-   <div class="card form-section">
+   <!-- Form (Left Side) -->
+   <div class="card">
     <h3>📝 New Consultation</h3>
     <div class="field">
-     <label for="diag">Diagnosis (نەخۆشی)</label>
-     <input id="diag" bind:value={diagnosis} placeholder="Enter condition..." />
+     <label for="diag">Diagnosis</label>
+     <input id="diag" bind:value={diagnosis} placeholder="Condition name..." />
     </div>
     <div class="field">
-     <label for="treat">Treatment (دەرمان)</label>
+     <label for="treat">Treatment</label>
      <textarea id="treat" bind:value={treatment} placeholder="Meds and dosage..."></textarea>
     </div>
     <div class="field">
@@ -102,49 +107,48 @@
      <textarea id="note" bind:value={notes} placeholder="Notes for future..."></textarea>
     </div>
     <button class="save-btn" onclick={addRecord} disabled={isSaving}>
-     {isSaving ? 'Protecting Data...' : '💾 Save & Protect Record'}
+     {isSaving ? 'Saving...' : '💾 Save Record'}
     </button>
    </div>
 
-   <!-- مێژوویا پزیشکی (لایێ ڕاستێ) -->
+   <!-- Medical History (Right Side) -->
    <div class="history-list">
     <h3>📜 Medical History ({records.length})</h3>
     {#each records as record (record.id)}
-     <div class="record card">
+     <div class="record-card card">
       <div class="date">📅 {new Date(record.created_at).toLocaleDateString()}</div>
       <h4>{record.diagnosis}</h4>
-      <p><b>Treatment:</b> {record.treatment}</p>
+      <p><b>Rx:</b> {record.treatment}</p>
       {#if record.notes}<p class="note"><i>{record.notes}</i></p>{/if}
      </div>
     {:else}
-     <div class="empty-msg">No medical records found. Add the first one to save it forever.</div>
+     <div class="empty-msg">No medical records found for this patient.</div>
     {/each}
    </div>
   </div>
  </div>
 {:else}
- <div class="loading">Fetching patient data...</div>
+ <div class="loading">Loading patient records...</div>
 {/if}
 
 <style>
- .container { max-width: 1200px; margin: 0 auto; color: var(--text); padding: 10px; }
+ .profile-layout { max-width: 1200px; margin: 0 auto; color: var(--text); }
  .card { background: var(--card, white); padding: 25px; border-radius: 15px; border: 1px solid var(--border, #ddd); margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
- .header-box { display: flex; justify-content: space-between; align-items: center; border-left: 6px solid #4f46e5; }
- 
+ .header-card { display: flex; justify-content: space-between; align-items: center; border-left: 6px solid #4f46e5; }
  .main-grid { display: grid; grid-template-columns: 450px 1fr; gap: 20px; }
  @media (max-width: 1000px) { .main-grid { grid-template-columns: 1fr; } }
  
  .field { margin-bottom: 15px; }
  label { display: block; font-weight: bold; margin-bottom: 5px; font-size: 0.85rem; }
- input, textarea { width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #ccc; background: white; color: black; box-sizing: border-box; font-family: inherit; }
- textarea { height: 100px; resize: none; }
+ input, textarea { width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #ccc; background: white; color: black; box-sizing: border-box; }
+ textarea { height: 80px; resize: none; }
  
- .save-btn { width: 100%; padding: 15px; background: #4f46e5; color: white; border: none; border-radius: 10px; cursor: pointer; font-weight: bold; font-size: 1rem; }
- .back-link { text-decoration: none; background: #f3f4f6; color: #333; padding: 10px 15px; border-radius: 8px; font-weight: bold; }
+ .save-btn { width: 100%; padding: 15px; background: #4f46e5; color: white; border: none; border-radius: 10px; cursor: pointer; font-weight: bold; }
+ .btn-back { text-decoration: none; background: #f3f4f6; color: #333; padding: 10px 15px; border-radius: 8px; font-weight: bold; }
 
- .record { border-left: 5px solid #10b981; margin-bottom: 15px; }
- .date { font-size: 0.8rem; font-weight: bold; color: #10b981; margin-bottom: 5px; }
- h4 { margin: 0 0 10px 0; font-size: 1.1rem; color: inherit; }
+ .record-card { border-left: 5px solid #10b981; }
+ .date { font-size: 0.8rem; font-weight: bold; color: #10b981; margin-bottom: 10px; }
+ h4 { margin: 0 0 10px 0; color: inherit; }
  .note { opacity: 0.7; font-size: 0.85rem; margin-top: 10px; border-top: 1px dashed #ddd; padding-top: 10px; }
  .empty-msg { text-align: center; padding: 50px; border: 2px dashed #ddd; border-radius: 15px; color: #999; }
 </style>
