@@ -17,29 +17,26 @@
  let diagnosis = $state(''), treatment = $state(''), notes = $state('');
  let isSaving = $state(false);
 
- // ١. هێنانەوەی هەموو داتاکان لە داتابەیس (Supabase)
  async function loadAllData() {
-  // وەرگرتنی ئایدی دکتۆر
   const storedId = localStorage.getItem('doctor_id');
   if (storedId) doctorId = Number(storedId);
 
-  if (!patientId) return;
-
-  // هێنانی زانیاری نەخۆش
-  const { data: p } = await supabase.from('patients').select('*').eq('id', patientId).single();
+  // ١. ئینانا زانیاریێن نەخۆشی
+  const { data: p } = await supabase.from('patients')
+            .select('*')
+            .eq('id', Number(patientId)) // پشتڕاستبە کو وەکی ژمارە دچیت
+            .single();
   if (p) patientInfo = p;
 
-  // هێنانی مێژووی پزیشکی نەخۆشەکە (ئەمە ئەو بەشەیە کە بەتاڵ دەبووەوە)
+  // ٢. ئینانا مێژوویا پزیشکی (ئەڤە ئەو پشکەیە یا بەرزە دبیت)
   const { data: r, error } = await supabase
    .from('medical_records')
    .select('*')
-   .eq('patient_id', patientId) // فلتەرکردن بەپێی ئایدی نەخۆش
-   .order('created_at', { ascending: false }); // نوێترین لە سەرەوە بێت
+   .eq('patient_id', Number(patientId)) // لێرە مەرجە Number بیت
+   .order('created_at', { ascending: false });
   
-  if (error) {
-   console.error("Error loading history:", error.message);
-  } else {
-   records = r || [];
+  if (r) {
+   records = r; // نوکە داتایێن کۆن دکەڤنە د لیستێ دا
   }
  }
 
