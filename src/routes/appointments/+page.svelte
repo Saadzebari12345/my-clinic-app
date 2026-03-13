@@ -2,204 +2,202 @@
  import { onMount } from 'svelte';
  import { supabase } from '$lib/supabaseClient';
 
- interface Patient { name: string; gender: string; }
- interface Appointment {
-  id: number;
-  patient_name: string;
-  gender: string;
-  date: string;
-  status: string;
-  doctor_id: number;
- }
+ interface Patient { name: string; id: number; }
+ interface Appointment { id: number; patient_name: string; date: string; status: string; doctor_id: number; }
+ interface MedicalRecord { diagnosis: string; treatment: string; created_at: string; }
 
  let appointments = $state<Appointment[]>([]);
  let patients = $state<Patient[]>([]);
- let searchTerm = $state('');
- let selectedPatient = $state('');
- let appointmentDate = $state('');
  let doctorId = $state(0);
- let isLoading = $state(false);
+ let searchTerm = $state('');
+ let selectedPatient = $state(''), appDate = $state('');
 
- // ١. حسابکرنا ئاماران ب شێوەیەکێ داینامیکی
+ // بۆ مۆدێلێ تاریخێ (Quick View)
+ let showHistory = $state(false);
+ let historyRecords = $state<MedicalRecord[]>([]);
+ let activePatientName = $state('');
+
+ // کاتێ نوکە بۆ حسابکرنا Overdue
+ let now = $state(new Date());
+
  let stats = $derived({
   done: appointments.filter(a => a.status === 'Done').length,
   waiting: appointments.filter(a => a.status === 'Pending' || a.status === 'Confirmed').length,
-  overdue: appointments.filter(a => a.status !== 'Done' && new Date(a.date) < new Date()).length
+  overdue: appointments.filter(a => a.status !== 'Done' && new Date(a.date) < now).length
  });
 
- // ٢. فلتەرکرنا لیستێ بۆ لێگەڕیانێ
- let filteredApps = $derived(
-  appointments.filter(a => a.patient_name.toLowerCase().includes(searchTerm.toLowerCase()))
- );
+ let filtered = $derived(appointments.filter(a => a.patient_name.toLowerCase().includes(searchTerm.toLowerCase())));
 
  async function fetchData() {
   if (!doctorId) return;
-  // ئینانا لیستا نەخۆشان دا کو ڕەگەزێ وان بزانی
-  const { data: pData } = await supabase.from('patients').select('name, gender').eq('doctor_id', doctorId);
-  if (pData) patients = pData;
-
-  // ئینانا ژڤانان
-  const { data: aData } = await supabase.from('appointments').select('*').eq('doctor_id', doctorId).order('date', { ascending: true });
-  if (aData) appointments = aData;
+  const { data: p } = await supabase.from('patients').select('id, name').eq('doctor_id', doctorId);
+  if (p) patients = p;
+  const { data: a } = await supabase.from('appointments').select('*').eq('doctor_id', doctorId).order('date', { ascending: true });
+  if (a) appointments = a;
  }
 
  onMount(() => {
-  const storedId = localStorage.getItem('doctor_id');
-  if (storedId) {
-   doctorId = Number(storedId);
-   fetchData();
-  }
+  doctorId = Number(localStorage.getItem('doctor_id'));
+  fetchData();
+  // نوژەنکرنا کاتی هەر خولەکەکێ دا نیشانا سۆر درست بیت
+  const timer = setInterval(() => now = new Date(), 60000);
+  return () => clearInterval(timer);
  });
 
- // ٣. فانکشنا زێدەکرنا ژڤانی (ڕاستکرنا کێشا Book Now)
- async function addAppointment() {
-  if (selectedPatient && appointmentDate && doctorId) {
-   isLoading = true;
+ async function addApp() {
+  if (!selectedPatient || !appDate) return;
+  const { error } = await supabase.from('appointments').insert([{ 
+   patient_name: selectedPatient, 
+   date: appDate, 
+   status: 'Pending', 
+   doctor_id: doctorId 
+  }]);
+  if (!error) { fetchData(); selectedPatient = ''; appDate = ''; }
+ }
 
-   // دیتنا ڕەگەزێ نەخۆشێ هەلبژارتی
-   const patientInfo = patients.find(p => p.name === selectedPatient);
-   const patientGender = patientInfo ? patientInfo.gender : 'Unknown';
+ async function updateStatus(id: number, status: string) {
+  await supabase.from('appointments').update({ status }).eq('id', id);
+  fetchData();
+ }
 
-   const { data, error } = await supabase.from('appointments').insert([
-    { 
-     patient_name: selectedPatient, 
-     gender: patientGender, 
-     date: appointmentDate, 
-     status: 'Pending', 
-     doctor_id: doctorId 
-    }
-   ]).select();
-
-   if (!error && data) {
-    // زێدەکرنا ب لەز بۆ شاشێ
-    appointments = [data[0], ...appointments];
-    selectedPatient = ''; 
-    appointmentDate = '';
-   } else {
-    alert("Error: " + error?.message);
-   }
-   isLoading = false;
-  } else {
-   alert("تکایە نەخۆشەکێ و کاتەکێ هەلبژێره");
+ // 🔍 ئینانا تاریخا نەخۆشی ب لێزی (Quick View)
+ async function openQuickHistory(pName: string) {
+  activePatientName = pName;
+  const { data } = await supabase
+   .from('medical_records')
+   .select('diagnosis, treatment, created_at')
+   .eq('patient_id', patients.find(p => p.name === pName)?.id)
+   .order('created_at', { ascending: false });
+  
+  if (data) {
+   historyRecords = data;
+   showHistory = true;
   }
  }
 
- async function updateStatus(id: number, newStatus: string) {
-  const { error } = await supabase.from('appointments').update({ status: newStatus }).eq('id', id);
-  if (!error) {
-   appointments = appointments.map(a => a.id === id ? { ...a, status: newStatus } : a);
-  }
- }
-
- async function deleteApp(id: number) {
-  if (confirm('Are you sure?')) {
-   const { error } = await supabase.from('appointments').delete().eq('id', id);
-   if (!error) appointments = appointments.filter(a => a.id !== id);
-  }
+ function isOverdue(dateStr: string, status: string) {
+  return status !== 'Done' && new Date(dateStr) < now;
  }
 </script>
 
-<div class="page-container">
- <div class="header-flex">
-  <h2 style="color: var(--text);">📅 Appointments Tracking</h2>
-  <div class="stats-grid">
-   <div class="stat-box done">✅ Done: {stats.done}</div>
-   <div class="stat-box waiting">⏳ Waiting: {stats.waiting}</div>
-   <div class="stat-box overdue">⚠️ Overdue: {stats.overdue}</div>
+<div class="page">
+ <div class="header">
+  <h2>📅 Appointments Tracking</h2>
+  <div class="stats">
+   <span class="st done">✅ Done: {stats.done}</span>
+   <span class="st wait">⏳ Waiting: {stats.waiting}</span>
+   <span class="st alert">⚠️ Overdue: {stats.overdue}</span>
   </div>
  </div>
 
  <!-- فۆرما زێدەکرنێ -->
- <div class="card add-card">
-  <div class="input-group">
-   <label for="p-select">Select Patient</label>
-   <select id="p-select" bind:value={selectedPatient}>
-    <option value="">-- Choose Patient --</option>
-    {#each patients as p}
-     <option value={p.name}>{p.name}</option>
-    {/each}
-   </select>
-  </div>
-  <div class="input-group">
-   <label for="a-date">Date & Time</label>
-   <input id="a-date" type="datetime-local" bind:value={appointmentDate} />
-  </div>
-  <button class="btn-add" onclick={addAppointment} disabled={isLoading}>
-   {isLoading ? '...' : 'Book Now'}
-  </button>
+ <div class="card add-box">
+  <select bind:value={selectedPatient}>
+   <option value="">-- Select Patient --</option>
+   {#each patients as p}<option value={p.name}>{p.name}</option>{/each}
+  </select>
+  <input type="datetime-local" bind:value={appDate} />
+  <button class="btn-main" onclick={addApp}>Book Now</button>
  </div>
 
- <div class="search-box">
- <input bind:value={searchTerm} placeholder="🔍 Search patient name..." />
- </div>
+ <input bind:value={searchTerm} placeholder="🔍 Search by name..." class="search-bar" />
 
- <div class="table-card">
+ <div class="table-container card">
   <table>
    <thead>
     <tr>
-     <th>Patient Name</th>
-     <th>Gender</th>
+     <th>Patient Name (Click for History)</th>
      <th>Date & Time</th>
      <th>Status</th>
-     <th style="text-align: center;">Actions</th>
+     <th>Actions</th>
     </tr>
    </thead>
    <tbody>
-    {#each filteredApps as app (app.id)}
-     <tr class={app.status === 'Done' ? 'row-done' : ''}>
-      <td style="font-weight: bold;">👤 {app.patient_name}</td>
-      <td><span class="g-badge {app.gender?.toLowerCase()}">{app.gender}</span></td>
-      <td>{new Date(app.date).toLocaleString()}</td>
-      <td><span class="status-badge {app.status}">{app.status}</span></td>
+    {#each filtered as a (a.id)}
+     <tr class={isOverdue(a.date, a.status) ? 'overdue-row' : ''}>
+      <td>
+       <!-- ناڤێ نەخۆشی - ئەگەر کات دەرباز بووبیت دێ بیتە سۆر -->
+       <button class="name-link" 
+        style="color: {isOverdue(a.date, a.status) ? '#ef4444' : 'inherit'}"
+        onclick={() => openQuickHistory(a.patient_name)}>
+        {isOverdue(a.date, a.status) ? '🔴 ' : '👤 '} {a.patient_name}
+       </button>
+      </td>
+      <td>{new Date(a.date).toLocaleString('en-GB', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' })}</td>
+      <td><span class="badge {a.status}">{a.status}</span></td>
       <td class="actions">
-       <button class="b-conf" onclick={() => updateStatus(app.id, 'Confirmed')}>🔵</button>
-       <button class="b-done" onclick={() => updateStatus(app.id, 'Done')}>✅</button>
-       <button class="b-del" onclick={() => deleteApp(app.id)}>🗑️</button>
+       <button class="btn-c" onclick={() => updateStatus(a.id, 'Confirmed')}>🔵 Confirm</button>
+       <button class="btn-g" onclick={() => updateStatus(a.id, 'Done')}>✅ Done</button>
       </td>
      </tr>
-    {:else}
-     <tr><td colspan="5" style="text-align: center; padding: 30px; color: #888;">No appointments found.</td></tr>
     {/each}
    </tbody>
   </table>
  </div>
 </div>
 
+<!-- 📜 Quick History Modal (ئەو پەنجەرەیا تاریخێ نیشا دەت) -->
+{#if showHistory}
+ <!-- svelte-ignore a11y_click_events_have_key_events -->
+ <!-- svelte-ignore a11y_no_static_element_interactions -->
+ <div class="modal-overlay" onclick={() => showHistory = false}>
+  <div class="modal-content" onclick={(e) => e.stopPropagation()}>
+   <div class="modal-header">
+    <h3>Medical History: {activePatientName}</h3>
+    <button class="close-btn" onclick={() => showHistory = false}>✕</button>
+   </div>
+   <div class="modal-body">
+    {#each historyRecords as rec}
+     <div class="history-item">
+      <small>{new Date(rec.created_at).toLocaleDateString()}</small>
+      <p><b>Diag:</b> {rec.diagnosis}</p>
+      <p><b>Rx:</b> {rec.treatment}</p>
+     </div>
+    {:else}
+     <p>No previous records found.</p>
+    {/each}
+   </div>
+  </div>
+ </div>
+{/if}
+
 <style>
- .header-flex { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; flex-wrap: wrap; gap: 15px; }
- .stats-grid { display: flex; gap: 10px; }
- .stat-box { padding: 10px 15px; border-radius: 12px; font-weight: bold; font-size: 0.85rem; border: 1px solid rgba(0,0,0,0.1); }
+ .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px; }
+ .stats { display: flex; gap: 10px; }
+ .st { padding: 8px 15px; border-radius: 12px; font-weight: bold; font-size: 0.8rem; }
  .done { background: #dcfce7; color: #166534; }
- .waiting { background: #fef3c7; color: #92400e; }
- .overdue { background: #fee2e2; color: #dc2626; }
+ .wait { background: #fef3c7; color: #92400e; }
+ .alert { background: #fee2e2; color: #dc2626; border: 1px solid #ef4444; }
 
- .add-card { display: flex; gap: 15px; padding: 20px; background: var(--card, white); border-radius: 15px; border: 1px solid var(--border, #ddd); margin-bottom: 20px; align-items: flex-end; flex-wrap: wrap; }
- .input-group { flex: 1; min-width: 200px; }
- .input-group label { display: block; font-size: 0.8rem; margin-bottom: 5px; font-weight: bold; }
- select, input { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #ccc; background: var(--card, white); color: var(--text); outline: none; }
- 
- .btn-add { background: #4f46e5; color: white; border: none; padding: 13px 30px; border-radius: 10px; cursor: pointer; font-weight: bold; }
+ .card { background: var(--card, white); padding: 20px; border-radius: 15px; border: 1px solid var(--border, #ddd); }
+ .add-box { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
+ select, input { flex: 1; padding: 10px; border-radius: 8px; border: 1px solid #ccc; background: white; color: black; }
+ .btn-main { background: #4f46e5; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: bold; }
 
- .search-box input { width: 100%; padding: 12px; border-radius: 12px; border: 1px solid #6366f1; background: var(--card, white); color: var(--text); margin-bottom: 15px; outline: none; }
+ .search-bar { width: 100%; padding: 12px; border-radius: 12px; border: 1px solid #6366f1; margin-bottom: 15px; background: var(--card); color: inherit; }
 
- .table-card { background: var(--card, white); border-radius: 15px; border: 1px solid var(--border, #ddd); overflow: hidden; }
  table { width: 100%; border-collapse: collapse; }
- th, td { padding: 15px; text-align: left; border-bottom: 1px solid var(--border, #eee); color: var(--text); }
+ th, td { padding: 15px; text-align: left; border-bottom: 1px solid var(--border, #eee); }
  
- .g-badge { padding: 3px 10px; border-radius: 15px; font-size: 0.75rem; font-weight: bold; }
- .g-badge.male { background: #e0f2fe; color: #0369a1; }
- .g-badge.female { background: #fce7f3; color: #be185d; }
+ .name-link { background: none; border: none; font-weight: bold; cursor: pointer; padding: 0; text-decoration: underline; text-underline-offset: 4px; }
+ .overdue-row { background: rgba(239, 68, 68, 0.05); }
 
- .status-badge { padding: 4px 10px; border-radius: 20px; font-size: 0.8rem; font-weight: bold; }
- .status-badge.Pending { background: #fef3c7; color: #92400e; }
- .status-badge.Confirmed { background: #e0f2fe; color: #0369a1; }
- .status-badge.Done { background: #dcfce7; color: #166534; }
+ .badge { padding: 4px 10px; border-radius: 20px; font-size: 0.7rem; font-weight: bold; }
+ .Pending { background: #fef3c7; color: #92400e; }
+ .Confirmed { background: #e0f2fe; color: #0369a1; }
+ .Done { background: #dcfce7; color: #166534; }
 
- .actions { display: flex; gap: 8px; justify-content: center; }
- .actions button { border: none; padding: 8px; border-radius: 8px; cursor: pointer; transition: 0.2s; }
- .b-conf { background: #e0f2fe; color: #0369a1; }
- .b-done { background: #dcfce7; color: #166534; }
- .b-del { background: #fee2e2; color: #dc2626; }
- 
- .row-done { opacity: 0.6; }
+ .actions { display: flex; gap: 5px; }
+ .actions button { padding: 6px 10px; border: none; border-radius: 6px; cursor: pointer; font-size: 0.75rem; font-weight: bold; }
+ .btn-c { background: #e0f2fe; color: #0369a1; }
+ .btn-g { background: #10b981; color: white; }
+
+ /* Modal Style (History Quick View) */
+ .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 1000; }
+ .modal-content { background: white; color: black; width: 500px; max-width: 90%; border-radius: 20px; padding: 25px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
+ .modal-header { display: flex; justify-content: space-between; border-bottom: 1px solid #eee; padding-bottom: 10px; margin-bottom: 15px; }
+ .modal-body { max-height: 400px; overflow-y: auto; }
+ .history-item { padding: 10px; border-bottom: 1px solid #f1f5f9; }
+ .history-item h4 { margin: 5px 0; }
+ .close-btn { background: none; border: none; font-size: 1.2rem; cursor: pointer; color: #999; }
 </style>
