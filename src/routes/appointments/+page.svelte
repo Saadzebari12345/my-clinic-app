@@ -39,7 +39,6 @@
  onMount(() => {
   doctorId = Number(localStorage.getItem('doctor_id'));
   fetchData();
-  // نوژەنکرنا کاتی هەر خولەکەکێ دا نیشانا سۆر درست بیت
   const timer = setInterval(() => now = new Date(), 60000);
   return () => clearInterval(timer);
  });
@@ -60,13 +59,25 @@
   fetchData();
  }
 
- // 🔍 ئینانا تاریخا نەخۆشی ب لێزی (Quick View)
+ // 🗑️ فانکشنا ژێبرنا ژڤانی (Delete Action)
+ async function deleteApp(id: number) {
+  if (confirm('ئەرێ تو پشتراستی تو دڤێت ڤی ژڤانی ژێببەی؟')) {
+   const { error } = await supabase.from('appointments').delete().eq('id', id);
+   if (!error) {
+    appointments = appointments.filter(a => a.id !== id);
+   }
+  }
+ }
+
  async function openQuickHistory(pName: string) {
   activePatientName = pName;
+  const patient = patients.find(p => p.name === pName);
+  if (!patient) return;
+  
   const { data } = await supabase
    .from('medical_records')
    .select('diagnosis, treatment, created_at')
-   .eq('patient_id', patients.find(p => p.name === pName)?.id)
+   .eq('patient_id', patient.id)
    .order('created_at', { ascending: false });
   
   if (data) {
@@ -100,7 +111,7 @@
   <button class="btn-main" onclick={addApp}>Book Now</button>
  </div>
 
- <input bind:value={searchTerm} placeholder="🔍 Search by name..." class="search-bar" />
+ <input bind:value={searchTerm} placeholder="🔍 Search patient by name..." class="search-bar" />
 
  <div class="table-container card">
   <table>
@@ -109,14 +120,13 @@
      <th>Patient Name (Click for History)</th>
      <th>Date & Time</th>
      <th>Status</th>
-     <th>Actions</th>
+     <th style="text-align: center;">Actions</th>
     </tr>
    </thead>
    <tbody>
     {#each filtered as a (a.id)}
      <tr class={isOverdue(a.date, a.status) ? 'overdue-row' : ''}>
       <td>
-       <!-- ناڤێ نەخۆشی - ئەگەر کات دەرباز بووبیت دێ بیتە سۆر -->
        <button class="name-link" 
         style="color: {isOverdue(a.date, a.status) ? '#ef4444' : 'inherit'}"
         onclick={() => openQuickHistory(a.patient_name)}>
@@ -126,20 +136,24 @@
       <td>{new Date(a.date).toLocaleString('en-GB', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' })}</td>
       <td><span class="badge {a.status}">{a.status}</span></td>
       <td class="actions">
-       <button class="btn-c" onclick={() => updateStatus(a.id, 'Confirmed')}>🔵 Confirm</button>
-       <button class="btn-g" onclick={() => updateStatus(a.id, 'Done')}>✅ Done</button>
+       <button class="btn-c" onclick={() => updateStatus(a.id, 'Confirmed')} title="Confirm">🔵</button>
+       <button class="btn-g" onclick={() => updateStatus(a.id, 'Done')} title="Mark as Done">✅</button>
+       <!-- دوگمێ Delete لێرەیە -->
+       <button class="btn-d" onclick={() => deleteApp(a.id)} title="Delete">🗑️</button>
       </td>
      </tr>
+    {:else}
+     <tr><td colspan="4" style="text-align: center; padding: 30px;">No appointments found.</td></tr>
     {/each}
    </tbody>
   </table>
  </div>
 </div>
 
-<!-- 📜 Quick History Modal (ئەو پەنجەرەیا تاریخێ نیشا دەت) -->
+<!-- 📜 Quick History Modal -->
 {#if showHistory}
- <!-- svelte-ignore a11y_click_events_have_key_events -->
  <!-- svelte-ignore a11y_no_static_element_interactions -->
+ <!-- svelte-ignore a11y_click_events_have_key_events -->
  <div class="modal-overlay" onclick={() => showHistory = false}>
   <div class="modal-content" onclick={(e) => e.stopPropagation()}>
    <div class="modal-header">
@@ -149,12 +163,12 @@
    <div class="modal-body">
     {#each historyRecords as rec}
      <div class="history-item">
-      <small>{new Date(rec.created_at).toLocaleDateString()}</small>
-      <p><b>Diag:</b> {rec.diagnosis}</p>
-      <p><b>Rx:</b> {rec.treatment}</p>
+      <small>📅 {new Date(rec.created_at).toLocaleDateString()}</small>
+      <p><b>Diagnosis:</b> {rec.diagnosis}</p>
+      <p><b>Treatment:</b> {rec.treatment}</p>
      </div>
     {:else}
-     <p>No previous records found.</p>
+     <p>No previous medical records found for this patient.</p>
     {/each}
    </div>
   </div>
@@ -171,15 +185,15 @@
 
  .card { background: var(--card, white); padding: 20px; border-radius: 15px; border: 1px solid var(--border, #ddd); }
  .add-box { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
- select, input { flex: 1; padding: 10px; border-radius: 8px; border: 1px solid #ccc; background: white; color: black; }
+ select, input { flex: 1; padding: 10px; border-radius: 8px; border: 1px solid #ccc; background: white !important; color: black !important; }
  .btn-main { background: #4f46e5; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: bold; }
 
- .search-bar { width: 100%; padding: 12px; border-radius: 12px; border: 1px solid #6366f1; margin-bottom: 15px; background: var(--card); color: inherit; }
+ .search-bar { width: 100%; padding: 12px; border-radius: 12px; border: 1px solid #6366f1; margin-bottom: 15px; background: var(--card); color: inherit; outline: none; }
 
  table { width: 100%; border-collapse: collapse; }
  th, td { padding: 15px; text-align: left; border-bottom: 1px solid var(--border, #eee); }
  
- .name-link { background: none; border: none; font-weight: bold; cursor: pointer; padding: 0; text-decoration: underline; text-underline-offset: 4px; }
+ .name-link { background: none; border: none; font-weight: bold; cursor: pointer; padding: 0; text-decoration: underline; text-underline-offset: 4px; color: inherit; }
  .overdue-row { background: rgba(239, 68, 68, 0.05); }
 
  .badge { padding: 4px 10px; border-radius: 20px; font-size: 0.7rem; font-weight: bold; }
@@ -187,17 +201,19 @@
  .Confirmed { background: #e0f2fe; color: #0369a1; }
  .Done { background: #dcfce7; color: #166534; }
 
- .actions { display: flex; gap: 5px; }
- .actions button { padding: 6px 10px; border: none; border-radius: 6px; cursor: pointer; font-size: 0.75rem; font-weight: bold; }
+ .actions { display: flex; gap: 5px; justify-content: center; }
+ .actions button { padding: 6px 10px; border: none; border-radius: 6px; cursor: pointer; font-size: 0.85rem; font-weight: bold; transition: 0.2s; }
  .btn-c { background: #e0f2fe; color: #0369a1; }
- .btn-g { background: #10b981; color: white; }
+ .btn-g { background: #dcfce7; color: #166534; }
+ .btn-d { background: #fee2e2; color: #dc2626; }
+ .actions button:hover { transform: scale(1.1); }
 
- /* Modal Style (History Quick View) */
- .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 1000; }
- .modal-content { background: white; color: black; width: 500px; max-width: 90%; border-radius: 20px; padding: 25px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
+ /* Modal Style */
+ .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 1000; }
+ .modal-content { background: white; color: #333; width: 500px; max-width: 95%; border-radius: 20px; padding: 25px; box-shadow: 0 15px 40px rgba(0,0,0,0.3); }
  .modal-header { display: flex; justify-content: space-between; border-bottom: 1px solid #eee; padding-bottom: 10px; margin-bottom: 15px; }
  .modal-body { max-height: 400px; overflow-y: auto; }
- .history-item { padding: 10px; border-bottom: 1px solid #f1f5f9; }
+ .history-item { padding: 12px; border-bottom: 1px solid #f1f5f9; }
  .history-item h4 { margin: 5px 0; }
- .close-btn { background: none; border: none; font-size: 1.2rem; cursor: pointer; color: #999; }
+ .close-btn { background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #999; }
 </style>
