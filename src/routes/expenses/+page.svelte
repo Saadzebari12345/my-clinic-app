@@ -10,14 +10,16 @@
  let doctorId = $state(0);
  let isLoading = $state(true);
 
- // ١. فانکشنا هێنانەڤەیا داتایان ژ داتابەیسا ئۆنلاین (دا ون نەبن)
+ // ١. هێنانەڤەیا داتایێن پاراستی ژ Supabase
  async function fetchExpenses() {
-  if (!doctorId) return;
-  
+  const storedId = localStorage.getItem('doctor_id');
+  if (!storedId) return;
+  doctorId = Number(storedId);
+
   const { data, error } = await supabase
    .from('expenses')
    .select('*')
-   .eq('doctor_id', doctorId)
+   .eq('doctor_id', doctorId) // بتنێ خەرجیێن ڤی دکتۆری
    .order('created_at', { ascending: false });
   
   if (!error && data) {
@@ -26,17 +28,11 @@
   isLoading = false;
  }
 
- onMount(() => {
-  const storedId = localStorage.getItem('doctor_id');
-  if (storedId) {
-   doctorId = Number(storedId);
-   fetchExpenses(); // هەر دەمێ لاپەرە ڤەببیت، داتایان دئینیت
-  }
- });
+ onMount(fetchExpenses);
 
- // ٢. سەیڤکرنا خەرجییا نوی بۆ هەتا هەتایێ
+ // ٢. سەیڤکرنا خەرجییەکا نوی (ب پاراستی)
  async function addExpense() {
-  if (!amount || !description) return alert("تکایە هەمی خانەیان پڕ بکە");
+  if (!amount || !description) return alert("تکایە خانەیان پڕ بکە");
   
   const { data, error } = await supabase.from('expenses').insert([{
    amount: Number(amount),
@@ -45,9 +41,9 @@
   }]).select();
 
   if (!error && data) {
-   expenses = [data[0], ...expenses]; // زێدەکرنا ڕاستەوخۆ بۆ سەر شاشێ
+   expenses = [data[0], ...expenses]; // زێدەکرنا ئێکسەر بۆ سەر شاشێ
    amount = ''; description = '';
-   alert("✅ ب سەرکەفتی هاتە سەیڤکرن");
+   alert("✅ ب سەرکەفتی هاتە سەیڤکرن و خەزنکرن");
   } else {
    alert("Error: " + error?.message);
   }
@@ -66,7 +62,7 @@
 
  <div class="card add-box">
   <div class="input-group">
-   <label for="desc">Expense Description</label>
+   <label for="desc">Description</label>
    <input id="desc" bind:value={description} placeholder="e.g. Water Bill, Rent..." />
   </div>
   <div class="input-group" style="width: 150px;">
@@ -76,40 +72,48 @@
   <button class="btn-add" onclick={addExpense}>💾 Save Expense</button>
  </div>
 
- <div class="card table-container">
-  <h3>📜 Expense History</h3>
-  <table>
-   <thead>
-    <tr><th>Description</th><th>Date</th><th>Amount</th><th>Action</th></tr>
-   </thead>
-   <tbody>
-    {#each expenses as exp (exp.id)}
-     <tr>
-      <td><b>{exp.description}</b></td>
-      <td>{new Date(exp.created_at).toLocaleDateString()}</td>
-      <td style="color: #ef4444; font-weight: bold;">-${exp.amount}</td>
-      <td><button class="btn-del" onclick={() => deleteExpense(exp.id)}>🗑️</button></td>
-     </tr>
-    {:else}
-     <tr><td colspan="4" style="text-align: center; padding: 20px;">
-      {isLoading ? 'Loading...' : 'No expenses found.'}
-     </td></tr>
-    {/each}
-   </tbody>
-  </table>
+ <div class="card history-box">
+  <h3>📜 Expense History ({expenses.length})</h3>
+  <div class="table-wrapper">
+   <table>
+    <thead>
+     <tr><th>Description</th><th>Date</th><th>Amount</th><th>Action</th></tr>
+    </thead>
+    <tbody>
+     {#each expenses as exp (exp.id)}
+      <tr>
+       <td><b>{exp.description}</b></td>
+       <td>{new Date(exp.created_at).toLocaleDateString()}</td>
+       <td style="color: #ef4444; font-weight: bold;">-${exp.amount}</td>
+       <td><button class="del-btn" onclick={() => deleteExpense(exp.id)}>🗑️</button></td>
+      </tr>
+     {:else}
+      <tr><td colspan="4" style="text-align: center; padding: 40px; color: #999;">
+       {isLoading ? 'Searching database...' : 'No data found in your account.'}
+      </td></tr>
+     {/each}
+    </tbody>
+   </table>
+  </div>
  </div>
 </div>
 
 <style>
- .page-container { max-width: 900px; color: var(--text); }
- .card { background: var(--card, white); padding: 25px; border-radius: 15px; border: 1px solid var(--border, #ddd); margin-bottom: 25px; }
+ .page-container { max-width: 1000px; margin: 0 auto; padding: 10px; color: var(--text); }
+ .card { background: var(--card, white); padding: 25px; border-radius: 15px; border: 1px solid var(--border, #ddd); margin-bottom: 25px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+ 
  .add-box { display: flex; gap: 15px; align-items: flex-end; flex-wrap: wrap; }
- .input-group { flex: 1; display: flex; flex-direction: column; gap: 5px; }
- input { padding: 12px; border-radius: 10px; border: 1px solid var(--border); background: white; color: black; outline: none; }
+ .input-group { flex: 1; display: flex; flex-direction: column; gap: 6px; }
+ label { font-size: 0.85rem; font-weight: bold; }
+ input { padding: 12px; border-radius: 10px; border: 1px solid var(--border, #ccc); background: white; color: black; outline: none; }
+ 
  .btn-add { background: #10b981; color: white; border: none; padding: 13px 25px; border-radius: 10px; cursor: pointer; font-weight: bold; }
- .table-container { padding: 0; overflow: hidden; }
+ 
+ .history-box { padding: 0; overflow: hidden; }
+ h3 { padding: 20px; margin: 0; border-bottom: 1px solid var(--border); font-size: 1.1rem; }
+ 
+ .table-wrapper { width: 100%; overflow-x: auto; }
  table { width: 100%; border-collapse: collapse; }
  th, td { padding: 15px; text-align: left; border-bottom: 1px solid var(--border); }
- .btn-del { background: none; border: none; cursor: pointer; font-size: 1.1rem; }
- h3 { padding: 20px; margin: 0; border-bottom: 1px solid var(--border); font-size: 1.1rem; }
+ .del-btn { background: none; border: none; cursor: pointer; font-size: 1.2rem; }
 </style>
