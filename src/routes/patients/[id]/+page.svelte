@@ -5,19 +5,16 @@
 
  interface Patient { id: number; name: string; age: number; phone: string; gender: string; }
  interface MedicalRecord { id: number; diagnosis: string; treatment: string; notes: string; bp: string; temp: string; weight: string; fee: number; created_at: string; }
- interface Attachment { id: number; file_url: string; file_name: string; created_at: string; }
 
  let patientId = $derived(Number(page.params.id)); 
  let doctorId = $state(0);
  let doctorName = $state('');
  let patientInfo = $state<Patient | null>(null);
  let records = $state<MedicalRecord[]>([]);
- let attachments = $state<Attachment[]>([]);
  
  let diagnosis = $state(''), treatment = $state(''), notes = $state(''), fee = $state('');
  let bp = $state(''), temp = $state(''), weight = $state('');
  let isSaving = $state(false);
- let isUploading = $state(false);
  let editingId = $state<number | null>(null);
 
  async function loadAllData() {
@@ -25,20 +22,19 @@
   doctorName = localStorage.getItem('doctor_username') || 'Doctor';
   if (storedId) doctorId = Number(storedId);
 
+  if (!patientId) return;
+
   const { data: p } = await supabase.from('patients').select('*').eq('id', patientId).single();
   if (p) patientInfo = p;
 
   const { data: r } = await supabase.from('medical_records').select('*').eq('patient_id', patientId).order('created_at', { ascending: false });
   if (r) records = r;
-
-  const { data: att } = await supabase.from('patient_attachments').select('*').eq('patient_id', patientId).order('created_at', { ascending: false });
-  if (att) attachments = att;
  }
 
  onMount(loadAllData);
 
  async function saveRecord() {
-  if (!diagnosis || !treatment) return alert("Please fill Diagnosis and Treatment");
+  if (!diagnosis || !treatment) return alert("تکایە خانەیان پڕ بکە");
   isSaving = true;
 
   const recordData = {
@@ -48,30 +44,21 @@
 
   if (editingId) {
    await supabase.from('medical_records').update(recordData).eq('id', editingId);
-   alert("✅ هاتە نوژەنکرن");
   } else {
    await supabase.from('medical_records').insert([recordData]);
-   alert("✅ هاتە سەیڤکرن");
   }
 
-  clearForm();
+  editingId = null;
+  diagnosis = ''; treatment = ''; notes = ''; bp = ''; temp = ''; weight = ''; fee = '';
   await loadAllData();
   isSaving = false;
  }
 
  function startEdit(record: MedicalRecord) {
   editingId = record.id;
-  diagnosis = record.diagnosis;
-  treatment = record.treatment;
-  notes = record.notes;
-  bp = record.bp; temp = record.temp; weight = record.weight;
-  fee = record.fee.toString();
+  diagnosis = record.diagnosis; treatment = record.treatment; notes = record.notes;
+  bp = record.bp; temp = record.temp; weight = record.weight; fee = record.fee.toString();
   window.scrollTo({ top: 0, behavior: 'smooth' });
- }
-
- function clearForm() {
-  editingId = null;
-  diagnosis = ''; treatment = ''; notes = ''; bp = ''; temp = ''; weight = ''; fee = '';
  }
 
  async function deleteRecord(id: number) {
@@ -81,148 +68,156 @@
   }
  }
 
- async function uploadFile(event: any) {
-  const file = event.target.files[0];
-  if (!file) return;
-  isUploading = true;
-  const fileName = `${Date.now()}_${file.name}`;
-  const { data, error } = await supabase.storage.from('clinic-files').upload(fileName, file);
-
-  if (data) {
-   const fileUrl = supabase.storage.from('clinic-files').getPublicUrl(fileName).data.publicUrl;
-   await supabase.from('patient_attachments').insert([{
-    patient_id: patientId, doctor_id: doctorId, file_url: fileUrl, file_name: file.name
-   }]);
-   await loadAllData();
-   alert("✅ وێنە بار بوو");
-  } else {
-   alert("Upload Error: " + error.message);
-  }
-  isUploading = false;
- }
-
+ // 🖨️ دیزاینێ پڕۆفیشناڵ یێ A4 بۆ چاپکرنێ
  function printRx(record: MedicalRecord) {
-  const lastImg = attachments[0]?.file_url || '';
-  const win = window.open('', '', 'width=900,height=1000');
-  win?.document.write(`
-   <div style="font-family:sans-serif; padding:40px; border:5px solid #4f46e5; border-radius:15px; color:#333;">
-    <h1 style="text-align:center; color:#4f46e5; margin-bottom:5px;">MEDICAL REPORT</h1>
-    <p style="text-align:center;">Dr. ${doctorName}</p>
-    <hr><div style="display:grid; grid-template-columns:1fr 1fr; gap:20px; background:#f9fafb; padding:15px; border-radius:10px;">
-     <div><b>Patient:</b> ${patientInfo?.name}</div>
-     <div><b>Phone:</b> ${patientInfo?.phone}</div>
-     <div><b>Date:</b> ${new Date(record.created_at).toLocaleString('en-GB')}</div>
-     <div><b>Vitals:</b> BP: ${record.bp} | T: ${record.temp}°C | W: ${record.weight}kg</div>
+  const win = window.open('', '', 'width=800,height=1000');
+  const html = `
+   <html>
+   <head>
+    <style>
+     @page { size: A4; margin: 20mm; }
+     body { font-family: 'Segoe UI', Arial, sans-serif; color: #1a1a1a; line-height: 1.6; padding: 0; margin: 0; }
+     .container { border: 2px solid #4f46e5; padding: 30px; height: 95%; position: relative; border-radius: 10px; }
+     .header { display: flex; justify-content: space-between; border-bottom: 3px solid #4f46e5; padding-bottom: 15px; margin-bottom: 25px; }
+     .clinic-title { font-size: 26px; font-weight: 900; color: #4f46e5; margin: 0; }
+     .doc-title { font-size: 18px; font-weight: bold; margin: 5px 0; }
+     .patient-box { background: #f8fafc; padding: 15px; border-radius: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; border: 1px solid #e2e8f0; margin-bottom: 25px; font-size: 14px; }
+     .patient-box b { color: #4f46e5; }
+     .vitals-strip { background: #f1f5f9; padding: 10px; border-radius: 5px; font-weight: bold; text-align: center; margin-bottom: 25px; font-size: 13px; }
+     .rx-icon { font-size: 50px; font-weight: bold; color: #4f46e5; font-style: italic; margin-bottom: 10px; }
+     .main-content { min-height: 450px; }
+     .section-title { font-size: 14px; text-transform: uppercase; color: #64748b; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px; margin-bottom: 10px; }
+     .diagnosis-text { font-size: 16px; margin-bottom: 25px; }
+     .treatment-text { font-size: 17px; white-space: pre-line; }
+     .footer { position: absolute; bottom: 30px; left: 30px; right: 30px; border-top: 1px solid #e2e8f0; padding-top: 15px; display: flex; justify-content: space-between; font-size: 11px; color: #94a3b8; }
+     .sig-area { text-align: center; width: 180px; border-top: 2px solid #1e293b; padding-top: 5px; font-weight: bold; color: #1e293b; }
+    </style>
+   </head>
+   <body>
+    <div class="container">
+     <div class="header">
+      <div>
+       <h1 class="clinic-title">E-CLINIC MEDICAL CENTER</h1>
+       <p class="doc-title">Dr. ${doctorName}</p>
+      </div>
+      <div style="text-align: right; font-size: 12px;">
+       Clinic Location: Duhok, Iraq<br>System ID: #${patientInfo?.id}
+      </div>
+     </div>
+
+     <div class="patient-box">
+      <div><b>Patient Name:</b> ${patientInfo?.name}</div>
+      <div><b>Mobile Number:</b> ${patientInfo?.phone || 'N/A'}</div>
+      <div><b>Age / Gender:</b> ${patientInfo?.age}Y / ${patientInfo?.gender}</div>
+      <div><b>Date:</b> ${new Date(record.created_at).toLocaleString('en-GB')}</div>
+     </div>
+
+     <div class="vitals-strip">
+      BP: ${record.bp || '--'} &nbsp; | &nbsp; Temp: ${record.temp || '--'}°C &nbsp; | &nbsp; Weight: ${record.weight || '--'}kg
+     </div>
+
+     <div class="main-content">
+      <div class="rx-icon">R𝓍</div>
+      <div class="section-title">Clinical Diagnosis</div>
+      <div class="diagnosis-text">${record.diagnosis}</div>
+      
+      <div class="section-title">Treatment & Prescription</div>
+      <div class="treatment-text">${record.treatment}</div>
+     </div>
+
+     <div class="footer">
+      <div>Generated by E-Clinic Digital System</div>
+      <div class="sig-area">Doctor's Signature</div>
+     </div>
     </div>
-    <div style="margin-top:30px;">
-     <h2 style="color:#4f46e5;">Rx</h2>
-     <p><b>Diagnosis:</b> ${record.diagnosis}</p>
-     <p><b>Treatment:</b><br>${record.treatment.replace(/\n/g, '<br>')}</p>
-    </div>
-    ${lastImg? `<div style="margin-top:20px; text-align:center;"><h3>Scan/Result:</h3><img src="${lastImg}" style="max-width:100%; max-height:350px; border-radius:10px; border:1px solid #ddd;"/></div>` : ''}
-    <br><br><p style="text-align:right; border-top:1px solid #333; width:200px; float:right; margin-top:40px;">Signature</p>
-   </div>
-  `);
+    <script>window.print(); window.close();<\/script>
+   </body>
+   </html>
+  `;
+  win?.document.write(html);
   win?.document.close();
-  win?.print();
  }
 </script>
 
 <div class="container">
- <header class="card header-card">
+ <header class="card patient-header">
   <div class="p-info">
    <h1>👤 {patientInfo?.name}</h1>
-   <p>Age: {patientInfo?.age} | Phone: {patientInfo?.phone}</p>
+   <p>{patientInfo?.age} years | {patientInfo?.gender} | {patientInfo?.phone}</p>
   </div>
-  <a href="/patients" class="btn-back">⬅ Back</a>
+  <a href="/patients" class="back-link">⬅ Back</a>
  </header>
 
  <div class="main-grid">
+  <!-- فۆرما نڤیسینێ -->
   <div class="card form-container">
-   <h3>{editingId ? '✏️ Edit Record' : '📝 New Consultation'}</h3>
-   <div class="vitals">
-    <input bind:value={bp} placeholder="BP" />
-    <input bind:value={temp} placeholder="T°C" />
-    <input bind:value={weight} placeholder="Weight" />
+   <h3>{editingId ? '✏️ Edit Consultation' : '📝 New Consultation'}</h3>
+   <div class="vitals-grid">
+    <input bind:value={bp} placeholder="BP (120/80)" />
+    <input bind:value={temp} placeholder="Temp°C" />
+    <input bind:value={weight} placeholder="Weight kg" />
    </div>
-   <input bind:value={diagnosis} placeholder="Diagnosis" style="margin-bottom:10px;"/>
-   <textarea bind:value={treatment} placeholder="Treatment & Plan..."></textarea>
-   <input bind:value={notes} placeholder="Extra private notes..." style="margin:10px 0;"/>
-   
-   <div class="row-flex">
-    <div style="flex:1;">
-     <!-- svelte-ignore a11y_label_has_associated_control -->
-     <label style="font-size:0.7rem; font-weight:bold; display:block; margin-bottom:2px;">Fee ($)</label>
-     <input bind:value={fee} type="number" placeholder="0.00" />
-    </div>
-    <button class="save-btn" onclick={saveRecord} style="flex:2; height:45px; align-self:flex-end;">
-     {editingId ? '💾 Update' : '💾 Save Record'}
-    </button>
+   <input bind:value={diagnosis} placeholder="Diagnosis (نەخۆشی)" class="diag-input" />
+   <textarea bind:value={treatment} placeholder="Treatment Plan & Medications..."></textarea>
+   <div class="action-row">
+    <input bind:value={fee} type="number" placeholder="Fee $" style="flex:1;" />
+    <button class="save-btn" onclick={saveRecord} style="flex:2;">💾 {editingId ? 'Update Record' : 'Save Record'}</button>
    </div>
-
-   <div class="upload-section">
-    <!-- svelte-ignore a11y_label_has_associated_control -->
-    <label>📂 Attach X-Ray / Lab Result (Below Fee)</label>
-    <input type="file" onchange={uploadFile} />
-    {#if isUploading}<p style="color:blue;">Uploading...</p>{/if}
-   </div>
-   {#if editingId}<button onclick={clearForm} class="btn-cancel">Cancel Edit</button>{/if}
+   {#if editingId}
+    <button class="cancel-btn" onclick={() => { editingId = null; diagnosis = ''; treatment = ''; bp = ''; temp = ''; weight = ''; fee = ''; }}>Cancel Edit</button>
+   {/if}
   </div>
 
-  <div class="history-list">
-   {#if attachments.length > 0}
-    <div class="card gallery">
-     <h4>🖼️ Medical Attachments</h4>
-     <div class="images">
-      {#each attachments as att}
-       <a href={att.file_url} target="_blank"><img src={att.file_url} alt="Medical" /></a>
-      {/each}
-     </div>
-    </div>
-   {/if}
-
+  <!-- مێژوویا پزیشکی (History) -->
+  <div class="history-column">
    <h3>📜 Medical History ({records.length})</h3>
    {#each records as record (record.id)}
     <div class="record card">
      <div class="record-head">
-      <span class="date">📅 {new Date(record.created_at).toLocaleString('en-GB')}</span>
+      <span>📅 {new Date(record.created_at).toLocaleString('en-GB')}</span>
       <div class="actions">
-       <button class="btn-p" onclick={() => printRx(record)}>🖨️ Print</button>
+       <button class="btn-p" onclick={() => printRx(record)}>🖨️ Print A4</button>
        <button class="btn-e" onclick={() => startEdit(record)}>✏️</button>
        <button class="btn-d" onclick={() => deleteRecord(record.id)}>🗑️</button>
       </div>
      </div>
      <h4>{record.diagnosis}</h4>
-     <p class="rx-txt">{record.treatment}</p>
+     <p class="rx-text">{record.treatment}</p>
+     {#if record.fee > 0}<span class="fee-tag">Paid: ${record.fee}</span>{/if}
     </div>
+   {:else}
+    <div class="empty-msg card">No consultation history for this patient.</div>
    {/each}
   </div>
  </div>
 </div>
 
 <style>
- .container { max-width: 1200px; margin: 0 auto; color: var(--text); padding: 10px; }
- .card { background: var(--card, white); padding: 25px; border-radius: 20px; border: 1px solid var(--border, #ddd); margin-bottom: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
- .header-card { display: flex; justify-content: space-between; align-items: center; border-left: 6px solid #4f46e5; }
- .main-grid { display: grid; grid-template-columns: 450px 1fr; gap: 20px; }
+ .container { max-width: 1200px; margin: 0 auto; color: var(--text); padding: 15px; }
+ .card { background: var(--card, white); padding: 25px; border-radius: 18px; border: 1px solid var(--border, #ddd); margin-bottom: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
+ .patient-header { display: flex; justify-content: space-between; align-items: center; border-left: 8px solid #4f46e5; }
+ 
+ .main-grid { display: grid; grid-template-columns: 420px 1fr; gap: 25px; }
  @media (max-width: 1000px) { .main-grid { grid-template-columns: 1fr; } }
  
- .vitals { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 10px; }
- input, textarea { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #ccc; background: white !important; color: black !important; box-sizing: border-box; }
- textarea { height: 100px; resize: none; }
+ .vitals-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+ input, textarea { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid var(--border, #ccc); background: white !important; color: black !important; box-sizing: border-box; }
+ textarea { height: 150px; margin: 10px 0; resize: none; font-family: inherit; }
+ .diag-input { font-weight: bold; margin-bottom: 5px; }
  
- .row-flex { display: flex; gap: 10px; margin-top: 10px; align-items: center; }
- .save-btn { background: #4f46e5; color: white; border: none; border-radius: 10px; cursor: pointer; font-weight: bold; }
- .upload-section { margin-top: 20px; padding: 10px; background: #f9fafb; border-radius: 10px; font-size: 0.8rem; }
- .btn-cancel { width: 100%; margin-top: 5px; background: #94a3b8; color: white; border: none; padding: 8px; border-radius: 8px; cursor: pointer; }
+ .action-row { display: flex; gap: 10px; margin-top: 10px; }
+ .save-btn { background: #4f46e5; color: white; border: none; padding: 12px; border-radius: 10px; cursor: pointer; font-weight: bold; }
+ .cancel-btn { width: 100%; margin-top: 8px; background: #94a3b8; color: white; border: none; padding: 8px; border-radius: 8px; cursor: pointer; }
 
- .images { display: flex; gap: 10px; overflow-x: auto; padding: 10px 0; }
- .images img { width: 80px; height: 80px; border-radius: 10px; object-fit: cover; border: 1px solid #ddd; }
- 
- .record { border-left: 5px solid #10b981; }
- .record-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
- .date { font-size: 0.8rem; font-weight: bold; color: #10b981; }
- .actions button { border: none; padding: 5px 10px; border-radius: 6px; cursor: pointer; font-weight: bold; }
- .btn-p { background: #f3f4f6; } .btn-e { background: #e0f2fe; color: #0369a1; } .btn-d { background: #fee2e2; color: #dc2626; }
- .back-btn { text-decoration: none; background: #f3f4f6; color: #333; padding: 8px 15px; border-radius: 8px; font-weight: bold; font-size: 0.85rem; }
+ .record { border-left: 6px solid #10b981; }
+ .record-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; font-size: 0.8rem; font-weight: bold; color: #10b981; }
+ .actions button { border: none; padding: 6px 10px; border-radius: 8px; cursor: pointer; margin-left: 5px; font-weight: bold; }
+ .btn-p { background: #f3f4f6; color: #1e293b; border: 1px solid #ddd !important; }
+ .btn-e { background: #e0f2fe; color: #0369a1; }
+ .btn-d { background: #fee2e2; color: #dc2626; }
+
+ .rx-text { white-space: pre-line; font-size: 0.95rem; line-height: 1.5; margin: 10px 0; }
+ .fee-tag { background: #dcfce7; color: #15803d; padding: 3px 10px; border-radius: 15px; font-size: 0.7rem; font-weight: bold; }
+ .back-link { text-decoration: none; background: #f3f4f6; color: #1e293b; padding: 10px 20px; border-radius: 10px; font-weight: bold; font-size: 0.9rem; }
+ .empty-msg { text-align: center; color: #94a3b8; padding: 40px; border: 2px dashed #e2e8f0; }
 </style>
