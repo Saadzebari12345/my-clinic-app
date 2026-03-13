@@ -28,6 +28,9 @@
     
     <nav class="nav-menu">
       <a href="/" class="nav-item {isActive('/') ? 'active' : ''}">🏠 Dashboard</a>
+      <a href="/expenses" class="nav-item {isActive('/expenses') ? 'active' : ''}">
+  <span class="icon">💸</span> Expenses
+</a>
       <a href="/patients" class="nav-item {isActive('/patients') ? 'active' : ''}">👥 Patients</a>
       <a href="/appointments" class="nav-item {isActive('/appointments') ? 'active' : ''}">📅 Appointments</a>
       
