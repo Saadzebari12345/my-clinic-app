@@ -1,52 +1,58 @@
 <script lang="ts">
- import { supabase } from '$lib/supabaseClient';
- let user = $state(''), pass = $state(''), role = $state('doctor'), msg = $state('');
+  import { supabase } from '$lib/supabaseClient';
+  let user = $state(""), pass = $state(""), role = $state("doctor");
+  let docName = $state(""), cName = $state(""), cAddr = $state(""), cPhone = $state("");
+  let msg = $state(""), isError = $state(false);
 
- async function createAccount() {
-  if (user && pass) {
-   const { error } = await supabase.from('doctors').insert([{ username: user, password: pass, role: role }]);
-   if (!error) {
-    msg = '✅ Account created successfully!';
-    user = ''; pass = '';
-   } else {
-    msg = '❌ Error: ' + error.message;
-   }
+  async function createAccount() {
+    if (!user || !pass || !docName) return alert("Please fill credentials");
+    
+    const { error } = await supabase.from('doctors').insert([{ 
+      username: user, password: pass, role, 
+      doctor_name: docName, clinic_name: cName, 
+      clinic_address: cAddr, clinic_phone: cPhone 
+    }]);
+
+    if (!error) {
+      msg = "✅ Account created with full clinic profile!";
+      isError = false;
+      user = ""; pass = ""; docName = ""; cName = ""; cAddr = ""; cPhone = "";
+    } else {
+      msg = "❌ Error: " + error.message;
+      isError = true;
+    }
   }
- }
 </script>
 
-<div style="max-width: 400px; padding: 20px; color: inherit;">
- <h2 style="margin-bottom: 20px;">➕ Create New Staff Account</h2>
- 
- <div class="card" style="padding: 30px; background: var(--card, white); border-radius: 15px; border: 1px solid var(--border, #ddd);">
-  
-  <!-- ١. خانەیا ناڤێ بەکارهێنەری -->
-  <div style="margin-bottom: 15px;">
-   <label for="reg-user" style="display: block; margin-bottom: 8px; font-weight: bold;">Username</label>
-   <input id="reg-user" bind:value={user} placeholder="e.g. dr_ahmed" style="width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #ccc; background: white; color: black;" />
-  </div>
-  
-  <!-- ٢. خانەیا پاسوۆردی -->
-  <div style="margin-bottom: 15px;">
-   <label for="reg-pass" style="display: block; margin-bottom: 8px; font-weight: bold;">Password</label>
-   <input id="reg-pass" bind:value={pass} type="password" placeholder="••••••••" style="width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #ccc; background: white; color: black;" />
-  </div>
-  
-  <!-- ٣. هەلبژارتنا پلەی (Role) -->
-  <div style="margin-bottom: 20px;">
-   <label for="reg-role" style="display: block; margin-bottom: 8px; font-weight: bold;">Role</label>
-   <select id="reg-role" bind:value={role} style="width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #ccc; background: white; color: black;">
-    <option value="doctor">Doctor</option>
-    <option value="admin">Admin</option>
-   </select>
-  </div>
+<div class="reg-container">
+  <h2>➕ Create New Doctor Account</h2>
+  <div class="card grid">
+    <section>
+      <h4>🔐 Login Info</h4>
+      <input bind:value={user} placeholder="Username" />
+      <input bind:value={pass} type="password" placeholder="Password" />
+      <select bind:value={role}><option value="doctor">Doctor</option><option value="admin">Admin</option></select>
+    </section>
+    
+    <section>
+      <h4>🏥 Clinic Profile (Fixed for Print)</h4>
+      <input bind:value={docName} placeholder="Doctor Full Name" />
+      <input bind:value={cName} placeholder="Clinic Name" />
+      <input bind:value={cAddr} placeholder="Clinic Address" />
+      <input bind:value={cPhone} placeholder="Clinic Phone" />
+    </section>
 
-  <button onclick={createAccount} style="width: 100%; background: #059669; color: white; padding: 14px; border: none; border-radius: 10px; cursor: pointer; font-weight: bold; font-size: 1rem;">
-   Create Account
-  </button>
-  
-  {#if msg}
-   <p style="margin-top: 15px; text-align: center; font-weight: bold; color: #4f46e5;">{msg}</p>
-  {/if}
- </div>
+    <button onclick={createAccount} class="btn-reg">Create Complete Account</button>
+    {#if msg}<p style="color: {isError ? 'red' : 'green'};">{msg}</p>{/if}
+  </div>
 </div>
+
+<style>
+  .reg-container { max-width: 800px; margin: 0 auto; color: var(--text); }
+  .card { background: var(--card, white); padding: 30px; border-radius: 20px; border: 1px solid var(--border); }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  section { display: flex; flex-direction: column; gap: 10px; }
+  h4 { margin: 0; color: #4f46e5; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+  input, select { padding: 12px; border-radius: 10px; border: 1px solid #ddd; }
+  .btn-reg { grid-column: span 2; background: #059669; color: white; padding: 15px; border: none; border-radius: 10px; cursor: pointer; font-weight: bold; }
+</style>
