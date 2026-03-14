@@ -67,71 +67,82 @@
    await loadAllData();
   }
  }
-async function printRx(record: MedicalRecord) {
-  // ١. ئینانا زانیاریێن نوژەن یێن کلینیکێ
-  const { data: doc } = await supabase.from('doctors').select('*').eq('id', doctorId).single();
-  
-  const cName = doc?.clinic_name || "E-CLINIC CENTER";
-  const cAddr = doc?.clinic_address || "Duhok, Iraq";
+
+// 🖨️ فانکشنا چاپکرنا A4 یا ڕاستکری (ب داتایێن ئۆتۆماتیکی)
+ // 🖨️ فانکشنا چاپکرنا فەرمی یا A4 ب داتایێن ئۆتۆماتیکی
+ // 🖨️ فانکشنا چاپکرنا فەرمی یا A4 ب داتایێن ئۆتۆماتیکی
+ async function printRx(record: MedicalRecord) {
+  // ١. وەرگرتنا ئایدییا دکتۆری
+  const storedDocId = localStorage.getItem('doctor_id');
+  if (!storedDocId) return alert("Error: Doctor ID not found!");
+
+  // ٢. ئینانا زانیاریێن فەرمی ژ داتابەیسێ (ب زۆرێ دئینیت)
+  const { data: doc } = await supabase
+   .from('doctors')
+   .select('doctor_name, clinic_name, clinic_address, clinic_phone')
+   .eq('id', storedDocId)
+   .single();
+
+  // ٣. دیارکرنا ناڤ و نیشانان
+  const cName = doc?.clinic_name || "E-CLINIC MEDICAL CENTER";
+  const dName = doc?.doctor_name || "Specialist Doctor";
+  const cAddr = doc?.clinic_address || "Duhok, Kurdistan";
   const cPhone = doc?.clinic_phone || "";
-  const win = window.open('', '', 'width=800,height=1000');
+
+  const win = window.open('', '', 'width=900,height=1100');
+  
   const html = `
    <html>
    <head>
     <style>
-     @page { size: A4; margin: 20mm; }
-     body { font-family: 'Segoe UI', Arial, sans-serif; color: #1a1a1a; line-height: 1.6; padding: 0; margin: 0; }
-     .container { border: 2px solid #4f46e5; padding: 30px; height: 95%; position: relative; border-radius: 10px; }
-     .header { display: flex; justify-content: space-between; border-bottom: 3px solid #4f46e5; padding-bottom: 15px; margin-bottom: 25px; }
-     .clinic-title { font-size: 26px; font-weight: 900; color: #4f46e5; margin: 0; }
-     .doc-title { font-size: 18px; font-weight: bold; margin: 5px 0; }
-     .patient-box { background: #f8fafc; padding: 15px; border-radius: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; border: 1px solid #e2e8f0; margin-bottom: 25px; font-size: 14px; }
-     .patient-box b { color: #4f46e5; }
-     .vitals-strip { background: #f1f5f9; padding: 10px; border-radius: 5px; font-weight: bold; text-align: center; margin-bottom: 25px; font-size: 13px; }
-     .rx-icon { font-size: 50px; font-weight: bold; color: #4f46e5; font-style: italic; margin-bottom: 10px; }
-     .main-content { min-height: 450px; }
-     .section-title { font-size: 14px; text-transform: uppercase; color: #64748b; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px; margin-bottom: 10px; }
-     .diagnosis-text { font-size: 16px; margin-bottom: 25px; }
-     .treatment-text { font-size: 17px; white-space: pre-line; }
-     .footer { position: absolute; bottom: 30px; left: 30px; right: 30px; border-top: 1px solid #e2e8f0; padding-top: 15px; display: flex; justify-content: space-between; font-size: 11px; color: #94a3b8; }
-     .sig-area { text-align: center; width: 180px; border-top: 2px solid #1e293b; padding-top: 5px; font-weight: bold; color: #1e293b; }
+     @page { size: A4; margin: 15mm; }
+     body { font-family: 'Segoe UI', sans-serif; color: #1a1a1a; margin: 0; padding: 0; }
+     .page-border { border: 2px solid #4f46e5; padding: 40px; height: 95vh; border-radius: 15px; position: relative; box-sizing: border-box; }
+     .header { display: flex; justify-content: space-between; border-bottom: 3px solid #4f46e5; padding-bottom: 15px; margin-bottom: 30px; }
+     .clinic-title { font-size: 28px; font-weight: 900; color: #4f46e5; margin: 0; }
+     .doc-name { font-size: 18px; font-weight: bold; margin: 5px 0; color: #333; }
+     .contact-info { text-align: right; font-size: 13px; color: #555; }
+     .patient-info { background: #f8fafc; padding: 20px; border-radius: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 15px; border: 1px solid #e2e8f0; margin-bottom: 30px; font-size: 14px; }
+     .vitals-bar { background: #f1f5f9; padding: 10px; border-radius: 5px; font-weight: bold; text-align: center; margin-bottom: 25px; font-size: 13px; }
+     .rx-symbol { font-size: 60px; font-weight: 900; color: #4f46e5; font-style: italic; margin-bottom: 10px; opacity: 0.8; }
+     .main-content { min-height: 400px; font-size: 18px; line-height: 1.6; }
+     .footer { position: absolute; bottom: 40px; left: 40px; right: 40px; border-top: 1px solid #eee; padding-top: 15px; display: flex; justify-content: space-between; font-size: 11px; color: #94a3b8; }
+     .sig { text-align: center; width: 180px; border-top: 2px solid #333; padding-top: 5px; font-weight: bold; }
     </style>
    </head>
    <body>
-    <div class="container">
+    <div class="page-border">
      <div class="header">
       <div>
-       <h1 class="clinic-title">E-CLINIC MEDICAL CENTER</h1>
-       <p class="doc-title">Dr. ${doctorName}</p>
+       <h1 class="clinic-title">${cName}</h1> <!-- ⬅ لێرە ناڤێ کلینیکا وی ب ئۆتۆماتیکی دهێت -->
+       <p class="doc-name">Dr. ${dName}</p> <!-- ⬅ لێرە ناڤێ دکتۆری دهێت -->
       </div>
-      <div style="text-align: right; font-size: 12px;">
-       Clinic Location: Duhok, Iraq<br>System ID: #${patientInfo?.id}
+      <div class="contact-info">
+       ${cAddr}<br>
+       Tel: ${cPhone}
       </div>
      </div>
 
-     <div class="patient-box">
+     <div class="patient-info">
       <div><b>Patient Name:</b> ${patientInfo?.name}</div>
-      <div><b>Mobile Number:</b> ${patientInfo?.phone || 'N/A'}</div>
       <div><b>Age / Gender:</b> ${patientInfo?.age}Y / ${patientInfo?.gender}</div>
-      <div><b>Date:</b> ${new Date(record.created_at).toLocaleString('en-GB')}</div>
+      <div><b>Mobile:</b> ${patientInfo?.phone || 'N/A'}</div>
+      <div><b>Date:</b> ${new Date(record.created_at).toLocaleDateString('en-GB')}</div>
      </div>
 
-     <div class="vitals-strip">
+     <div class="vitals-bar">
       BP: ${record.bp || '--'} &nbsp; | &nbsp; Temp: ${record.temp || '--'}°C &nbsp; | &nbsp; Weight: ${record.weight || '--'}kg
      </div>
 
      <div class="main-content">
-      <div class="rx-icon">R𝓍</div>
-      <div class="section-title">Clinical Diagnosis</div>
-      <div class="diagnosis-text">${record.diagnosis}</div>
-      
-      <div class="section-title">Treatment & Prescription</div>
-      <div class="treatment-text">${record.treatment}</div>
+      <div class="rx-symbol">R𝓍</div>
+      <p><b>Clinical Diagnosis:</b> ${record.diagnosis}</p>
+      <p><b>Treatment & Prescription:</b><br>${record.treatment.replace(/\n/g, '<br>')}</p>
      </div>
 
      <div class="footer">
-      <div>Generated by E-Clinic Digital System</div>
-      <div class="sig-area">Doctor's Signature</div>
+      <div>Printed via E-Clinic Digital System</div>
+      <div class="sig">Doctor's Signature</div>
      </div>
     </div>
     <script>window.print(); window.close();<\/script>
