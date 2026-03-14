@@ -71,87 +71,36 @@
 // 🖨️ فانکشنا چاپکرنا A4 یا ڕاستکری (ب داتایێن ئۆتۆماتیکی)
  // 🖨️ فانکشنا چاپکرنا فەرمی یا A4 ب داتایێن ئۆتۆماتیکی
  // 🖨️ فانکشنا چاپکرنا فەرمی یا A4 ب داتایێن ئۆتۆماتیکی
- async function printRx(record: MedicalRecord) {
-  // ١. وەرگرتنا ئایدییا دکتۆری
-  const storedDocId = localStorage.getItem('doctor_id');
-  if (!storedDocId) return alert("Error: Doctor ID not found!");
-
-  // ٢. ئینانا زانیاریێن فەرمی ژ داتابەیسێ (ب زۆرێ دئینیت)
-  const { data: doc } = await supabase
-   .from('doctors')
-   .select('doctor_name, clinic_name, clinic_address, clinic_phone')
-   .eq('id', storedDocId)
-   .single();
-
-  // ٣. دیارکرنا ناڤ و نیشانان
-  const cName = doc?.clinic_name || "E-CLINIC MEDICAL CENTER";
-  const dName = doc?.doctor_name || "Specialist Doctor";
-  const cAddr = doc?.clinic_address || "Duhok, Kurdistan";
-  const cPhone = doc?.clinic_phone || "";
-
-  const win = window.open('', '', 'width=900,height=1100');
-  
-  const html = `
-   <html>
-   <head>
-    <style>
-     @page { size: A4; margin: 15mm; }
-     body { font-family: 'Segoe UI', sans-serif; color: #1a1a1a; margin: 0; padding: 0; }
-     .page-border { border: 2px solid #4f46e5; padding: 40px; height: 95vh; border-radius: 15px; position: relative; box-sizing: border-box; }
-     .header { display: flex; justify-content: space-between; border-bottom: 3px solid #4f46e5; padding-bottom: 15px; margin-bottom: 30px; }
-     .clinic-title { font-size: 28px; font-weight: 900; color: #4f46e5; margin: 0; }
-     .doc-name { font-size: 18px; font-weight: bold; margin: 5px 0; color: #333; }
-     .contact-info { text-align: right; font-size: 13px; color: #555; }
-     .patient-info { background: #f8fafc; padding: 20px; border-radius: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 15px; border: 1px solid #e2e8f0; margin-bottom: 30px; font-size: 14px; }
-     .vitals-bar { background: #f1f5f9; padding: 10px; border-radius: 5px; font-weight: bold; text-align: center; margin-bottom: 25px; font-size: 13px; }
-     .rx-symbol { font-size: 60px; font-weight: 900; color: #4f46e5; font-style: italic; margin-bottom: 10px; opacity: 0.8; }
-     .main-content { min-height: 400px; font-size: 18px; line-height: 1.6; }
-     .footer { position: absolute; bottom: 40px; left: 40px; right: 40px; border-top: 1px solid #eee; padding-top: 15px; display: flex; justify-content: space-between; font-size: 11px; color: #94a3b8; }
-     .sig { text-align: center; width: 180px; border-top: 2px solid #333; padding-top: 5px; font-weight: bold; }
-    </style>
-   </head>
-   <body>
-    <div class="page-border">
-     <div class="header">
-      <div>
-       <h1 class="clinic-title">${cName}</h1> <!-- ⬅ لێرە ناڤێ کلینیکا وی ب ئۆتۆماتیکی دهێت -->
-       <p class="doc-name">Dr. ${dName}</p> <!-- ⬅ لێرە ناڤێ دکتۆری دهێت -->
-      </div>
-      <div class="contact-info">
-       ${cAddr}<br>
-       Tel: ${cPhone}
-      </div>
-     </div>
-
-     <div class="patient-info">
-      <div><b>Patient Name:</b> ${patientInfo?.name}</div>
-      <div><b>Age / Gender:</b> ${patientInfo?.age}Y / ${patientInfo?.gender}</div>
-      <div><b>Mobile:</b> ${patientInfo?.phone || 'N/A'}</div>
-      <div><b>Date:</b> ${new Date(record.created_at).toLocaleDateString('en-GB')}</div>
-     </div>
-
-     <div class="vitals-bar">
-      BP: ${record.bp || '--'} &nbsp; | &nbsp; Temp: ${record.temp || '--'}°C &nbsp; | &nbsp; Weight: ${record.weight || '--'}kg
-     </div>
-
-     <div class="main-content">
-      <div class="rx-symbol">R𝓍</div>
-      <p><b>Clinical Diagnosis:</b> ${record.diagnosis}</p>
-      <p><b>Treatment & Prescription:</b><br>${record.treatment.replace(/\n/g, '<br>')}</p>
-     </div>
-
-     <div class="footer">
-      <div>Printed via E-Clinic Digital System</div>
-      <div class="sig">Doctor's Signature</div>
-     </div>
-    </div>
-    <script>window.print(); window.close();<\/script>
-   </body>
-   </html>
-  `;
-  win?.document.write(html);
-  win?.document.close();
- }
+	async function printRx(record: MedicalRecord) {
+		const { data: doc } = await supabase.from('doctors').select('*').eq('id', doctorId).single();
+		
+		const win = window.open('', '', 'width=900,height=1100');
+		win?.document.write(`
+			<div style="font-family:sans-serif; padding:50px; border:3px solid #4f46e5; border-radius:20px; height:92vh; position:relative;">
+				<div style="display:flex; justify-content:space-between; border-bottom:4px solid #4f46e5; padding-bottom:15px; margin-bottom:30px;">
+					<div><h1 style="margin:0; color:#4f46e5; text-transform:uppercase;">${doc.clinic_name}</h1><p style="font-size:20px; font-weight:bold;">Dr. ${doc.doctor_name}</p></div>
+					<div style="text-align:right;">${doc.clinic_address}<br>Tel: ${doc.clinic_phone}</div>
+				</div>
+				<div style="background:#f8fafc; padding:20px; border-radius:12px; display:grid; grid-template-columns:1fr 1fr; gap:15px; margin-bottom:40px; border:1px solid #eee;">
+					<div><b>Patient:</b> ${patientInfo?.name}</div>
+					<div><b>Phone:</b> ${patientInfo?.phone}</div>
+					<div><b>Age:</b> ${patientInfo?.age}Y / ${patientInfo?.gender}</div>
+					<div><b>Date:</b> ${new Date(record.created_at).toLocaleDateString('en-GB')}</div>
+				</div>
+				<div style="min-height:400px; font-size:18px;">
+					<h2 style="font-size:70px; color:#4f46e5; font-style:italic; margin:0;">Rx</h2>
+					<p><b>Diagnosis:</b> ${record.diagnosis}</p>
+					<p><b>Treatment:</b><br>${record.treatment.replace(/\n/g, '<br>')}</p>
+				</div>
+				<div style="position:absolute; bottom:50px; left:50px; right:50px; border-top:1px solid #eee; padding-top:20px; display:flex; justify-content:space-between;">
+					<small>E-Clinic Pro System</small>
+					<div style="text-align:center; width:200px; border-top:2px solid #333; padding-top:5px; font-weight:bold;">Signature</div>
+				</div>
+			</div>
+		`);
+		win?.document.close();
+		win?.print();
+	}
 </script>
 
 <div class="container">

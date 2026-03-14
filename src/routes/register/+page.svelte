@@ -1,136 +1,103 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { supabase } from '$lib/supabaseClient';
+	import { goto } from '$app/navigation';
 
 	let doctors = $state<any[]>([]);
-	let msg = $state(''), isError = $state(false), isLoading = $state(false);
+	let doctorId = $state(''), role = $state('');
 
-	// متغیرێن بۆ دروستکرنا ئەکاونتەکێ نوی
-	let user = $state(""), pass = $state(""), role = $state("doctor");
-	let docName = $state(""), cName = $state(""), cAddr = $state(""), cPhone = $state("");
-	let testsList = $state("");
-
-	// متغیرێن بۆ دەستکاریکرنا فەحسێن دکتۆرێن هەین (Edit Mode)
-	let editingDoctor = $state<any>(null);
-	let editTests = $state("");
+	// متغیرێن دروستكرنا حیسابا نوی
+	let user = $state(''), pass = $state(''), docName = $state(''), cName = $state(''), cAddr = $state(''), cPhone = $state(''), tests = $state('');
+	
+	let editingDoc = $state<any>(null); // بۆ Edit كرنێ
 
 	async function fetchDoctors() {
 		const { data } = await supabase.from('doctors').select('*').order('id', { ascending: false });
 		if (data) doctors = data;
 	}
 
-	onMount(fetchDoctors);
+	onMount(() => {
+		role = localStorage.getItem('doctor_role') || '';
+		if (role !== 'admin') goto('/'); // ئه‌گه‌ر نه‌ ئه‌دمین بیت دێ هێته‌ده‌ر
+		fetchDoctors();
+	});
 
-	async function createAccount() {
-		if (!user || !pass || !docName) return alert("Please fill all fields");
-		isLoading = true;
-		const { error } = await supabase.from('doctors').insert([{ 
-			username: user, password: pass, role, 
+	async function handleSave() {
+		if (!user || !pass || !docName) return alert("Please fill credentials");
+		
+		const docData = { 
+			username: user, password: pass, role: 'doctor', 
 			doctor_name: docName, clinic_name: cName, 
-			clinic_address: cAddr, clinic_phone: cPhone,
-			allowed_tests: testsList 
-		}]);
+			clinic_address: cAddr, clinic_phone: cPhone, 
+			allowed_tests: tests 
+		};
 
-		if (!error) {
-			msg = "✅ Doctor Registered Successfully!";
-			user = ""; pass = ""; docName = ""; testsList = "";
-			fetchDoctors();
+		if (editingDoc) {
+			await supabase.from('doctors').update(docData).eq('id', editingDoc.id);
+			alert("✅ Doctor updated!");
 		} else {
-			msg = "❌ Error: " + error.message;
-			isError = true;
+			await supabase.from('doctors').insert([docData]);
+			alert("✅ New account created!");
 		}
-		isLoading = false;
+		cancelEdit();
+		fetchDoctors();
 	}
 
-	// 🛠️ فانکشنا نووژەنکرنا فەحسان بۆ دکتۆرێن کۆن
-	async function updateDoctorTests() {
-		if (!editingDoctor) return;
-		const { error } = await supabase.from('doctors')
-			.update({ allowed_tests: editTests })
-			.eq('id', editingDoctor.id);
+	function startEdit(doc: any) {
+		editingDoc = doc;
+		user = doc.username; pass = doc.password; docName = doc.doctor_name;
+		cName = doc.clinic_name; cAddr = doc.clinic_address; cPhone = doc.clinic_phone;
+		tests = doc.allowed_tests;
+	}
 
-		if (!error) {
-			alert("✅ Lab Tests Updated for Dr. " + editingDoctor.doctor_name);
-			editingDoctor = null;
-			fetchDoctors();
-		}
+	function cancelEdit() {
+		editingDoc = null;
+		user = ''; pass = ''; docName = ''; cName = ''; cAddr = ''; cPhone = ''; tests = '';
 	}
 </script>
 
-<div class="admin-container">
+<div class="admin-panel">
 	<h2>🛠️ Admin: Doctor Management Center</h2>
 
-	<div class="main-grid">
-		<!-- 1. بەشێ زێدەکرنا دکتۆرێ نوی -->
-		<div class="card">
-			<h3>➕ Register New Doctor</h3>
-			<div class="form">
-				<input bind:value={user} placeholder="Username (Login)" />
-				<input bind:value={pass} type="password" placeholder="Password" />
-				<input bind:value={docName} placeholder="Doctor's Full Name" />
-				<input bind:value={cName} placeholder="Clinic Name" />
-				<textarea bind:value={testsList} placeholder="Lab Tests (split by comma: CBC, Sugar, Lipid...)"></textarea>
-				<button class="btn-add" onclick={createAccount} disabled={isLoading}>Register Doctor</button>
-			</div>
+	<div class="card form-box">
+		<h3>{editingDoc ? '✏️ Edit Doctor Profile' : '➕ Register New Doctor'}</h3>
+		<div class="grid-inputs">
+			<input bind:value={user} placeholder="Login Username" />
+			<input bind:value={pass} type="password" placeholder="Login Password" />
+			<input bind:value={docName} placeholder="Doctor Full Name" />
+			<input bind:value={cName} placeholder="Clinic Name" />
+			<input bind:value={cAddr} placeholder="Address" />
+			<input bind:value={cPhone} placeholder="Phone Number" />
+			<textarea bind:value={tests} placeholder="Assigned Lab Tests (CBC, Sugar, Lipid...)" style="grid-column: span 2; height: 80px;"></textarea>
 		</div>
+		<div class="btns">
+			<button class="btn-save" onclick={handleSave}>{editingDoc ? 'Update' : 'Create Account'}</button>
+			{#if editingDoc}<button class="btn-cancel" onclick={cancelEdit}>Cancel</button>{/if}
+		</div>
+	</div>
 
-		<!-- 2. لیستا هەمی دکتۆران و گۆهۆڕینا فەحسان -->
-		<div class="card">
-			<h3>📋 Existing Doctors & Lab Config</h3>
-			<div class="doc-list">
-				{#each doctors as doc}
-					<div class="doc-item">
-						<div class="info">
-							<b>Dr. {doc.doctor_name}</b>
-							<p>Tests: {doc.allowed_tests || 'None'}</p>
-						</div>
-						<button class="btn-edit" onclick={() => { editingDoctor = doc; editTests = doc.allowed_tests; }}>
-							Edit Tests 🧪
-						</button>
-					</div>
-				{/each}
+	<div class="list-section">
+		<h3>📋 Existing Accounts</h3>
+		{#each doctors as doc}
+			<div class="doc-card card">
+				<div>
+					<b>{doc.doctor_name}</b> <small>({doc.username})</small>
+					<p style="font-size: 0.75rem; color: #666; margin: 5px 0;">{doc.allowed_tests || 'No tests assigned'}</p>
+				</div>
+				<button class="btn-edit" onclick={() => startEdit(doc)}>Edit ⚙️</button>
 			</div>
-		</div>
+		{/each}
 	</div>
 </div>
 
-<!-- 📝 Modal بۆ دەستکاریکرنا ب لەز یا فەحسان -->
-{#if editingDoctor}
-	<div class="modal">
-		<div class="modal-content card">
-			<h3>Update Lab Tests for Dr. {editingDoctor.doctor_name}</h3>
-			<p>Modify the test list below (comma separated):</p>
-			<textarea bind:value={editTests} style="height: 150px; width: 100%;"></textarea>
-			<div class="modal-btns">
-				<button class="btn-save" onclick={updateDoctorTests}>Save Changes</button>
-				<button class="btn-cancel" onclick={() => editingDoctor = null}>Cancel</button>
-			</div>
-		</div>
-	</div>
-{/if}
-
 <style>
-	.admin-container { max-width: 1200px; margin: 0 auto; color: var(--text); padding: 20px; }
-	.main-grid { display: grid; grid-template-columns: 1fr 1.2fr; gap: 25px; }
-	@media (max-width: 900px) { .main-grid { grid-template-columns: 1fr; } }
-
-	.card { background: var(--card, white); padding: 25px; border-radius: 20px; border: 1px solid var(--border, #ddd); box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
-	.form { display: flex; flex-direction: column; gap: 10px; }
-	input, textarea { padding: 12px; border-radius: 10px; border: 1px solid #ccc; background: white; color: black; }
-	
-	.btn-add { background: #4f46e5; color: white; border: none; padding: 12px; border-radius: 10px; cursor: pointer; font-weight: bold; }
-	.doc-list { display: flex; flex-direction: column; gap: 15px; margin-top: 15px; }
-	.doc-item { display: flex; justify-content: space-between; align-items: center; padding: 15px; background: #f8fafc; border-radius: 12px; border: 1px solid #eee; }
-	.doc-item b { color: #4f46e5; }
-	.doc-item p { margin: 5px 0 0; font-size: 0.75rem; color: #666; }
-	.btn-edit { background: #10b981; color: white; border: none; padding: 8px 12px; border-radius: 8px; cursor: pointer; font-size: 0.8rem; font-weight: bold; }
-
-	/* Modal Styling */
-	.modal { position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); display:flex; justify-content:center; align-items:center; z-index: 1000; }
-	.modal-content { width: 500px; max-width: 90%; }
-	.modal-btns { display: flex; gap: 10px; margin-top: 20px; }
-	.btn-save { flex: 2; background: #4f46e5; color: white; border: none; padding: 12px; border-radius: 10px; cursor: pointer; font-weight: bold; }
-	.btn-cancel { flex: 1; background: #94a3b8; color: white; border: none; padding: 12px; border-radius: 10px; cursor: pointer; }
-
-	:global(.dark-mode) .doc-item { background: #0f172a; border-color: #334155; }
+	.admin-panel { max-width: 1000px; margin: 0 auto; color: var(--text); padding: 20px; }
+	.card { background: var(--card, white); padding: 25px; border-radius: 15px; border: 1px solid var(--border, #ddd); margin-bottom: 25px; }
+	.grid-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+	input, textarea { padding: 12px; border-radius: 8px; border: 1px solid #ccc; background: white; color: black; }
+	.btns { margin-top: 15px; display: flex; gap: 10px; }
+	.btn-save { flex: 2; background: #4f46e5; color: white; border: none; padding: 12px; border-radius: 8px; cursor: pointer; font-weight: bold; }
+	.btn-cancel { flex: 1; background: #94a3b8; color: white; border: none; padding: 12px; border-radius: 8px; cursor: pointer; }
+	.doc-card { display: flex; justify-content: space-between; align-items: center; padding: 15px; }
+	.btn-edit { background: #e0f2fe; color: #0369a1; border: none; padding: 8px 15px; border-radius: 8px; cursor: pointer; font-weight: bold; }
 </style>
