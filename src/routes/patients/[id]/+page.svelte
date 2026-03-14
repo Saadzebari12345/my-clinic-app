@@ -67,9 +67,13 @@
    await loadAllData();
   }
  }
-
- // 🖨️ دیزاینێ پڕۆفیشناڵ یێ A4 بۆ چاپکرنێ
- function printRx(record: MedicalRecord) {
+async function printRx(record: MedicalRecord) {
+  // ١. ئینانا زانیاریێن نوژەن یێن کلینیکێ
+  const { data: doc } = await supabase.from('doctors').select('*').eq('id', doctorId).single();
+  
+  const cName = doc?.clinic_name || "E-CLINIC CENTER";
+  const cAddr = doc?.clinic_address || "Duhok, Iraq";
+  const cPhone = doc?.clinic_phone || "";
   const win = window.open('', '', 'width=800,height=1000');
   const html = `
    <html>
