@@ -27,6 +27,11 @@
     <div class="doc-info">Dr. {doctorName} <br> <small>({role})</small></div>
     
     <nav class="nav-menu">
+     <a href="/" class="nav-item {isActive('/') ? 'active' : ''}">🏠 Dashboard</a>
+      <a href="/expenses" class="nav-item {isActive('/expenses') ? 'active' : ''}">
+  <span class="icon">💸</span> Expenses
+</a>
+ <a href="/patients" class="nav-item {isActive('/patients') ? 'active' : ''}">👥 Patients</a>
     <a href="/lab" class="nav-item {isActive('/lab') ? 'active' : ''}">
   <span class="icon">🧪</span> Lab Request
 </a>
@@ -34,7 +39,7 @@
       <a href="/expenses" class="nav-item {isActive('/expenses') ? 'active' : ''}">
   <span class="icon">💸</span> Expenses
 </a>
-      <a href="/patients" class="nav-item {isActive('/patients') ? 'active' : ''}">👥 Patients</a>
+     
       <a href="/appointments" class="nav-item {isActive('/appointments') ? 'active' : ''}">📅 Appointments</a>
       
       {#if role === 'admin'}
