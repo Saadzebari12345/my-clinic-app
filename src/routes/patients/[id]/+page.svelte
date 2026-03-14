@@ -71,35 +71,62 @@
 // 🖨️ فانکشنا چاپکرنا A4 یا ڕاستکری (ب داتایێن ئۆتۆماتیکی)
  // 🖨️ فانکشنا چاپکرنا فەرمی یا A4 ب داتایێن ئۆتۆماتیکی
  // 🖨️ فانکشنا چاپکرنا فەرمی یا A4 ب داتایێن ئۆتۆماتیکی
-	async function printRx(record: MedicalRecord) {
+		async function printRx(record: MedicalRecord) {
+		// ١. ئینانا زانیاریێن فەرمی ڕاستەوخۆ ژ داتابەیسێ پێش چاپکرنێ
 		const { data: doc } = await supabase.from('doctors').select('*').eq('id', doctorId).single();
 		
 		const win = window.open('', '', 'width=900,height=1100');
 		win?.document.write(`
-			<div style="font-family:sans-serif; padding:50px; border:3px solid #4f46e5; border-radius:20px; height:92vh; position:relative;">
-				<div style="display:flex; justify-content:space-between; border-bottom:4px solid #4f46e5; padding-bottom:15px; margin-bottom:30px;">
-					<div><h1 style="margin:0; color:#4f46e5; text-transform:uppercase;">${doc.clinic_name}</h1><p style="font-size:20px; font-weight:bold;">Dr. ${doc.doctor_name}</p></div>
-					<div style="text-align:right;">${doc.clinic_address}<br>Tel: ${doc.clinic_phone}</div>
+			<html>
+			<head>
+				<style>
+					@page { size: A4; margin: 15mm; }
+					body { font-family: 'Segoe UI', sans-serif; padding: 0; margin: 0; color: #1a1a1a; }
+					.border-box { border: 3px solid #4f46e5; padding: 40px; height: 93vh; border-radius: 20px; position: relative; box-sizing: border-box; }
+					.header { display: flex; justify-content: space-between; border-bottom: 4px solid #4f46e5; padding-bottom: 15px; margin-bottom: 30px; }
+					.clinic-title { font-size: 30px; font-weight: 900; color: #4f46e5; margin: 0; }
+					.patient-info { background: #f8fafc; padding: 20px; border-radius: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 15px; border: 1px solid #e2e8f0; margin-bottom: 40px; }
+					.rx-icon { font-size: 70px; font-weight: 900; color: #4f46e5; font-style: italic; margin-bottom: 10px; opacity: 0.8; }
+					.content { min-height: 400px; font-size: 18px; line-height: 1.8; }
+					.footer { position: absolute; bottom: 40px; left: 40px; right: 40px; border-top: 1px solid #eee; padding-top: 20px; display: flex; justify-content: space-between; font-size: 12px; color: #94a3b8; }
+				</style>
+			</head>
+			<body>
+				<div class="border-box">
+					<div class="header">
+						<div>
+							<h1 class="clinic-title">${doc?.clinic_name || 'E-CLINIC'}</h1>
+							<p style="font-size:20px; font-weight:bold; margin:5px 0;">Dr. ${doc?.doctor_name || 'Doctor'}</p>
+						</div>
+						<div style="text-align:right; font-size:13px;">
+							${doc?.clinic_address || ''}<br>Tel: ${doc?.clinic_phone || ''}
+						</div>
+					</div>
+
+					<div class="patient-info">
+						<div><b>Patient:</b> ${patientInfo?.name}</div>
+						<div><b>Phone:</b> ${patientInfo?.phone}</div>
+						<div><b>Age / Gender:</b> ${patientInfo?.age}Y / ${patientInfo?.gender}</div>
+						<div><b>Date:</b> ${new Date(record.created_at).toLocaleDateString('en-GB')}</div>
+					</div>
+
+					<div class="content">
+						<div class="rx-icon">R𝓍</div>
+						<p><b>Diagnosis:</b> ${record.diagnosis}</p>
+						<p style="white-space: pre-line;"><b>Treatment:</b><br>${record.treatment}</p>
+						<p style="font-size:14px; margin-top:30px;">Vitals: BP: ${record.bp} | T: ${record.temp}°C | W: ${record.weight}kg</p>
+					</div>
+
+					<div class="footer">
+						<div>E-Clinic Digital Management System</div>
+						<div style="text-align:center; width:200px; border-top:2px solid #333; padding-top:5px; font-weight:bold; color:#1a1a1a;">Signature</div>
+					</div>
 				</div>
-				<div style="background:#f8fafc; padding:20px; border-radius:12px; display:grid; grid-template-columns:1fr 1fr; gap:15px; margin-bottom:40px; border:1px solid #eee;">
-					<div><b>Patient:</b> ${patientInfo?.name}</div>
-					<div><b>Phone:</b> ${patientInfo?.phone}</div>
-					<div><b>Age:</b> ${patientInfo?.age}Y / ${patientInfo?.gender}</div>
-					<div><b>Date:</b> ${new Date(record.created_at).toLocaleDateString('en-GB')}</div>
-				</div>
-				<div style="min-height:400px; font-size:18px;">
-					<h2 style="font-size:70px; color:#4f46e5; font-style:italic; margin:0;">Rx</h2>
-					<p><b>Diagnosis:</b> ${record.diagnosis}</p>
-					<p><b>Treatment:</b><br>${record.treatment.replace(/\n/g, '<br>')}</p>
-				</div>
-				<div style="position:absolute; bottom:50px; left:50px; right:50px; border-top:1px solid #eee; padding-top:20px; display:flex; justify-content:space-between;">
-					<small>E-Clinic Pro System</small>
-					<div style="text-align:center; width:200px; border-top:2px solid #333; padding-top:5px; font-weight:bold;">Signature</div>
-				</div>
-			</div>
+				<script>window.print(); window.close();<\/script>
+			</body>
+			</html>
 		`);
 		win?.document.close();
-		win?.print();
 	}
 </script>
 
