@@ -71,10 +71,18 @@
 // 🖨️ فانکشنا چاپکرنا A4 یا ڕاستکری (ب داتایێن ئۆتۆماتیکی)
  // 🖨️ فانکشنا چاپکرنا فەرمی یا A4 ب داتایێن ئۆتۆماتیکی
  // 🖨️ فانکشنا چاپکرنا فەرمی یا A4 ب داتایێن ئۆتۆماتیکی
-		async function printRx(record: MedicalRecord) {
-		// ١. ئینانا زانیاریێن فەرمی ڕاستەوخۆ ژ داتابەیسێ پێش چاپکرنێ
-		const { data: doc } = await supabase.from('doctors').select('*').eq('id', doctorId).single();
+			async function printRx(record: MedicalRecord) {
+		// ١. هێنانەوەی زانیارییە نوێیەکانی دکتۆر لە داتابەیس
+		const { data: doc } = await supabase
+			.from('doctors')
+			.select('doctor_name, clinic_name, clinic_address, clinic_phone')
+			.eq('id', doctorId)
+			.single();
 		
+		// ٢. دیاریکردنی ناوەکان (ئەگەر لە داتابەیس ناو هەبێت دەریدەخات)
+		const dName = doc?.doctor_name || "Specialist Doctor";
+		const cName = doc?.clinic_name || "E-CLINIC CENTER";
+
 		const win = window.open('', '', 'width=900,height=1100');
 		win?.document.write(`
 			<html>
@@ -82,44 +90,40 @@
 				<style>
 					@page { size: A4; margin: 15mm; }
 					body { font-family: 'Segoe UI', sans-serif; padding: 0; margin: 0; color: #1a1a1a; }
-					.border-box { border: 3px solid #4f46e5; padding: 40px; height: 93vh; border-radius: 20px; position: relative; box-sizing: border-box; }
+					.page-border { border: 3px solid #4f46e5; padding: 40px; height: 93vh; border-radius: 20px; position: relative; box-sizing: border-box; }
 					.header { display: flex; justify-content: space-between; border-bottom: 4px solid #4f46e5; padding-bottom: 15px; margin-bottom: 30px; }
 					.clinic-title { font-size: 30px; font-weight: 900; color: #4f46e5; margin: 0; }
+					.doctor-name { font-size: 22px; font-weight: bold; margin: 8px 0; color: #333; }
 					.patient-info { background: #f8fafc; padding: 20px; border-radius: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 15px; border: 1px solid #e2e8f0; margin-bottom: 40px; }
-					.rx-icon { font-size: 70px; font-weight: 900; color: #4f46e5; font-style: italic; margin-bottom: 10px; opacity: 0.8; }
-					.content { min-height: 400px; font-size: 18px; line-height: 1.8; }
+					.content { min-height: 400px; font-size: 19px; line-height: 1.8; }
 					.footer { position: absolute; bottom: 40px; left: 40px; right: 40px; border-top: 1px solid #eee; padding-top: 20px; display: flex; justify-content: space-between; font-size: 12px; color: #94a3b8; }
 				</style>
 			</head>
 			<body>
-				<div class="border-box">
+				<div class="page-border">
 					<div class="header">
 						<div>
-							<h1 class="clinic-title">${doc?.clinic_name || 'E-CLINIC'}</h1>
-							<p style="font-size:20px; font-weight:bold; margin:5px 0;">Dr. ${doc?.doctor_name || 'Doctor'}</p>
+							<h1 class="clinic-title">${cName}</h1>
+							<p class="doctor-name">Dr. ${dName}</p> <!-- لێرە ناوی دکتۆرەکە ڕاست دەبێت -->
 						</div>
-						<div style="text-align:right; font-size:13px;">
+						<div style="text-align: right; font-size: 13px;">
 							${doc?.clinic_address || ''}<br>Tel: ${doc?.clinic_phone || ''}
 						</div>
 					</div>
-
 					<div class="patient-info">
 						<div><b>Patient:</b> ${patientInfo?.name}</div>
 						<div><b>Phone:</b> ${patientInfo?.phone}</div>
 						<div><b>Age / Gender:</b> ${patientInfo?.age}Y / ${patientInfo?.gender}</div>
 						<div><b>Date:</b> ${new Date(record.created_at).toLocaleDateString('en-GB')}</div>
 					</div>
-
 					<div class="content">
-						<div class="rx-icon">R𝓍</div>
+						<div style="font-size: 70px; color: #4f46e5; font-style: italic;">R𝓍</div>
 						<p><b>Diagnosis:</b> ${record.diagnosis}</p>
 						<p style="white-space: pre-line;"><b>Treatment:</b><br>${record.treatment}</p>
-						<p style="font-size:14px; margin-top:30px;">Vitals: BP: ${record.bp} | T: ${record.temp}°C | W: ${record.weight}kg</p>
 					</div>
-
 					<div class="footer">
-						<div>E-Clinic Digital Management System</div>
-						<div style="text-align:center; width:200px; border-top:2px solid #333; padding-top:5px; font-weight:bold; color:#1a1a1a;">Signature</div>
+						<div>E-Clinic Digital System</div>
+						<div style="text-align:center; width:200px; border-top:2px solid #333; padding-top:5px; font-weight:bold;">Signature</div>
 					</div>
 				</div>
 				<script>window.print(); window.close();<\/script>
