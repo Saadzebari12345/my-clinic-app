@@ -2,176 +2,150 @@
  import { onMount } from 'svelte';
  import { supabase } from '$lib/supabaseClient';
 
- // ١. گۆڕاوێن ئاماران (دیزاینێ ڕاست و ڕێكوپێك)
+ let stats = $state({ totalPatients: 0, todayIncome: 0, totalIncome: 0, totalExpenses: 0, netProfit: 0 });
+ let monthlyReport = $state({ patients: 0, income: 0, expenses: 0, profit: 0, show: false });
+ let recentVisits = $state<any[]>([]);
  let doctorId = $state(0);
  let isLoading = $state(true);
- 
- let selectedMonth = $state(new Date().getMonth() + 1); 
- let selectedYear = $state(new Date().getFullYear());
-
- let monthlyStats = $state({ patients: 0, income: 0, expenses: 0, profit: 0 });
- let recentActivity = $state<any[]>([]);
-
- const months = [
-  { id: 1, name: 'January' }, { id: 2, name: 'February' }, { id: 3, name: 'March' },
-  { id: 4, name: 'April' }, { id: 5, name: 'May' }, { id: 6, name: 'June' },
-  { id: 7, name: 'July' }, { id: 8, name: 'August' }, { id: 9, name: 'September' },
-  { id: 10, name: 'October' }, { id: 11, name: 'November' }, { id: 12, name: 'December' }
- ];
 
  onMount(async () => {
   const storedId = localStorage.getItem('doctor_id');
   if (storedId) {
    doctorId = Number(storedId);
-   await loadDashboard();
+   await refreshData();
   }
  });
 
- async function loadDashboard() {
-  if (!doctorId) return;
+ async function refreshData() {
   isLoading = true;
+  const now = new Date();
+  const todayStr = now.toDateString(); 
+  const currentMonth = now.getMonth();
+  const currentYear = now.getFullYear();
 
-  // ئینانا هەمی داتایان بێی فلتەرێ توند یێ کاتی (بۆ هندێ چو تشت بەرزە نەبن)
-  const { data: records } = await supabase.from('medical_records').select('fee, created_at, diagnosis, patients(name)').eq('doctor_id', doctorId);
+  // ١. ئینانا هەمی داتایان ب ئێکجار
+  const { count: pCount } = await supabase.from('patients').select('*', { count: 'exact', head: true }).eq('doctor_id', doctorId);
+  const { data: records } = await supabase.from('medical_records').select('fee, created_at, patients(name)').eq('doctor_id', doctorId);
   const { data: exps } = await supabase.from('expenses').select('amount, created_at').eq('doctor_id', doctorId);
 
-  // فلتەرکرنا داتایان ل دویڤ هەیڤا هەلبژارتی د ناڤ بەرنامەی دا
+  // ٢. حسابکرنا داهاتی (حتی ئەگەر created_at خەلەت بیت)
   if (records) {
-   const filteredRecords = records.filter(r => {
-    const d = new Date(r.created_at);
-    return (d.getMonth() + 1) === selectedMonth && d.getFullYear() === selectedYear;
+   let tIncome = 0; let dIncome = 0; let mIncome = 0;
+   
+   records.forEach(r => {
+    const rFee = Number(r.fee) || 0;
+    tIncome += rFee; // کۆما گشتی هەمیشە زێدە دبیت
+
+    if (r.created_at) {
+     const rDate = new Date(r.created_at);
+     if (rDate.toDateString() === todayStr) dIncome += rFee;
+     if (rDate.getMonth() === currentMonth && rDate.getFullYear() === currentYear) mIncome += rFee;
+    } else {
+     // ئەگەر کات NULL بوو، ل داهاتێ ئەڤرۆ حساب بکە دا سفر نیشان نەدەت
+     dIncome += rFee;
+     mIncome += rFee;
+    }
    });
 
-   monthlyStats.patients = filteredRecords.length;
-   monthlyStats.income = filteredRecords.reduce((sum, r) => sum + (Number(r.fee) || 0), 0);
-   recentActivity = filteredRecords.slice(-6).reverse();
+   stats.totalIncome = tIncome;
+   stats.todayIncome = dIncome;
+   monthlyReport.income = mIncome;
+   recentVisits = records.slice(-6).reverse();
   }
 
+  // ٣. حسابکرنا خەرجییان
   if (exps) {
-   const filteredExps = exps.filter(e => {
-    const d = new Date(e.created_at);
-    return (d.getMonth() + 1) === selectedMonth && d.getFullYear() === selectedYear;
+   let tExp = 0; let mExp = 0;
+   exps.forEach(e => {
+    const eAmt = Number(e.amount) || 0;
+    tExp += eAmt;
+    if (e.created_at) {
+     const eDate = new Date(e.created_at);
+     if (eDate.getMonth() === currentMonth && eDate.getFullYear() === currentYear) mExp += eAmt;
+    } else {
+     mExp += eAmt;
+    }
    });
-   monthlyStats.expenses = filteredExps.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+   stats.totalExpenses = tExp;
+   monthlyReport.expenses = mExp;
   }
 
-  monthlyStats.profit = monthlyStats.income - monthlyStats.expenses;
+  stats.totalPatients = pCount || 0;
+  stats.netProfit = stats.totalIncome - stats.totalExpenses;
+  monthlyReport.profit = monthlyReport.income - monthlyReport.expenses;
   isLoading = false;
  }
 </script>
 
 <div class="dashboard-container">
- <header class="dashboard-header">
-  <div class="title-area">
-   <h1>Performance Overview 🚀</h1>
-   <p>ئامارێن کلینیکێ ل دویڤ هەیڤان</p>
-  </div>
-  
-  <div class="controls">
-   <select bind:value={selectedMonth} onchange={loadDashboard}>
-    {#each months as m}<option value={m.id}>{m.name}</option>{/each}
-   </select>
-   <button class="refresh-btn" onclick={loadDashboard}>🔄 Update</button>
+ <header class="header">
+  <h1>ناڤەندا کۆنترۆڵا کلینیکێ 👋</h1>
+  <div class="btns">
+   <button onclick={refreshData} class="refresh-btn">🔄 {isLoading ? '...' : 'Update'}</button>
+   <button onclick={() => monthlyReport.show = true} class="report-btn">📊 Monthly</button>
   </div>
  </header>
 
- {#if isLoading}
-  <div class="loader">📊 Loading Analytics...</div>
- {:else}
-  <!-- کارتێن جاران (شین، کەسک، سۆر، زەرد) -->
-  <div class="stats-grid">
-   <div class="stat-card blue">
-    <p>Total Patients</p>
-    <h3>{monthlyStats.patients}</h3>
-   </div>
-   <div class="stat-card green">
-    <p>Monthly Income</p>
-    <h3>${monthlyStats.income}</h3>
-   </div>
-   <div class="stat-card red">
-    <p>Monthly Expenses</p>
-    <h3>${monthlyStats.expenses}</h3>
-   </div>
-   <div class="stat-card gold">
-    <p>Net Profit</p>
-    <h3>${monthlyStats.profit}</h3>
+ <div class="stats-grid">
+  <div class="stat-card blue"><p>Total Patients</p><h3>{stats.totalPatients}</h3></div>
+  <div class="stat-card green"><p>Today's Income</p><h3>${stats.todayIncome}</h3></div>
+  <div class="stat-card indigo"><p>Total Income</p><h3>${stats.totalIncome}</h3></div>
+  <div class="stat-card red"><p>Total Expenses</p><h3>${stats.totalExpenses}</h3></div>
+ </div>
+
+ <div class="main-layout">
+  <div class="card glass">
+   <h3>📈 Net Profit</h3>
+   <h2 style="color: {stats.netProfit >= 0 ? '#10b981' : '#f43f5e'}">${stats.netProfit}</h2>
+   <div class="profit-bar">
+    <div class="income-bar" style="width: 100%">Income: ${stats.totalIncome}</div>
+    <div class="expense-bar" style="width: {stats.totalIncome > 0 ? (stats.totalExpenses / stats.totalIncome) * 100 : 0}%">Expense: ${stats.totalExpenses}</div>
    </div>
   </div>
 
-  <div class="main-grid">
-   <!-- گرافێ داهات و خەرجی -->
-   <div class="card glass chart-card">
-    <h3>📊 Income vs Expenses</h3>
-    <div class="bar-container">
-     <div class="bar-row">
-      <!-- svelte-ignore a11y_label_has_associated_control -->
-      <label>Income</label>
-      <div class="bar-bg"><div class="bar-fill green" style="width: 100%"></div></div>
-      <span class="val">${monthlyStats.income}</span>
-     </div>
-     <div class="bar-row">
-      <!-- svelte-ignore a11y_label_has_associated_control -->
-      <label>Expenses</label>
-      <div class="bar-bg">
-       <div class="bar-fill red" style="width: {monthlyStats.income > 0 ? (monthlyStats.expenses / monthlyStats.income) * 100 : 0}%"></div>
-      </div>
-      <span class="val">${monthlyStats.expenses}</span>
-     </div>
-    </div>
-   </div>
-
-   <!-- نویترین چالاکی -->
-   <div class="card glass activity-card">
-    <h3>🕒 Recent Activity</h3>
-    <div class="list">{#each recentActivity as item}
-      <div class="item">
-       <b>{item.patients?.name || 'Patient'}</b>
-       <span class="price">+${item.fee}</span>
-      </div>
-     {:else}
-      <p class="empty">No records for this month.</p>
-     {/each}
-    </div>
-   </div>
+  <div class="card glass">
+   <h3>🕒 Recent Activity</h3>
+   {#each recentVisits as v}
+    <div class="row"><span>{v.patients?.name || 'Patient'}</span> <b>+${v.fee}</b></div>
+   {:else}
+    <p class="empty">No records found.</p>
+   {/each}
   </div>
- {/if}
+ </div>
 </div>
 
+<!-- svelte-ignore a11y_click_events_have_key_events -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+{#if monthlyReport.show}<div class="modal" onclick={() => monthlyReport.show = false}>
+  <div class="modal-card" onclick={e => e.stopPropagation()}>
+   <h3>📊 Monthly Report</h3>
+   <div class="m-row"><span>Income:</span> <b style="color:green">+${monthlyReport.income}</b></div>
+   <div class="m-row"><span>Expenses:</span> <b style="color:red">-${monthlyReport.expenses}</b></div>
+   <div class="m-total"><span>Profit:</span> <h2>${monthlyReport.profit}</h2></div>
+   <button class="close-btn" onclick={() => monthlyReport.show = false}>Close</button>
+  </div>
+ </div>
+{/if}
+
 <style>
- .dashboard-container { color: var(--text); padding: 10px; }
- .dashboard-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
- .refresh-btn { background: #4f46e5; color: white; border: none; padding: 10px 20px; border-radius: 12px; cursor: pointer; font-weight: bold; }
- select { padding: 10px; border-radius: 10px; border: 1px solid #ddd; background: white; color: black; font-weight: bold; }
-
- .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 30px; }
- .stat-card { padding: 30px; border-radius: 20px; color: white; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); text-align: center; }
+ .dashboard-container { color: var(--text); padding: 15px; font-family: sans-serif; }
+ .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; }
+ .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 30px; }
+ .stat-card { padding: 25px; border-radius: 20px; color: white; text-align: center; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+ .blue { background: #4f46e5; } .green { background: #10b981; } .indigo { background: #6366f1; } .red { background: #f43f5e; }
  
- .blue { background: #4f46e5; }
- .green { background: #10b981; }
- .red { background: #ef4444; }
- .gold { background: #f59e0b; }
-
- .stat-card h3 { margin: 10px 0 0; font-size: 2.2rem; font-weight: 900; }
- .stat-card p { margin: 0; font-size: 0.85rem; font-weight: bold; opacity: 0.9; text-transform: uppercase; }
-
- .main-grid { display: grid; grid-template-columns: 1.2fr 1fr; gap: 25px; }
- @media (max-width: 1000px) { .main-grid { grid-template-columns: 1fr; } }
-
- .card { background: var(--card, white); padding: 25px; border-radius: 28px; border: 1px solid var(--border, #eee); }
+ .main-layout { display: grid; grid-template-columns: 1fr 1.5fr; gap: 20px; }
+ .card { background: var(--card, white); padding: 25px; border-radius: 20px; border: 1px solid var(--border); }
  
- .bar-container { display: flex; flex-direction: column; gap: 20px; margin-top: 25px; }
- .bar-row { display: flex; align-items: center; gap: 15px; }
- .bar-row label { width: 70px; font-weight: bold; }
- .bar-bg { flex: 1; background: #f1f5f9; height: 12px; border-radius: 6px; overflow: hidden; }
- .bar-fill { height: 100%; transition: width 1s ease; }
- .bar-fill.green { background: #10b981; }
- .bar-fill.red { background: #f43f5e; }
- .val { width: 70px; text-align: right; font-weight: bold; }
+ .profit-bar { margin-top: 20px; background: #f1f5f9; height: 40px; border-radius: 10px; overflow: hidden; position: relative; }
+ .income-bar { background: #10b981; height: 50%; color: white; font-size: 0.7rem; padding-left: 10px; display: flex; align-items: center; }
+ .expense-bar { background: #f43f5e; height: 50%; color: white; font-size: 0.7rem; padding-left: 10px; display: flex; align-items: center; transition: 0.5s; }
 
- .item { display: flex; justify-content: space-between; padding: 12px; border-bottom: 1px solid rgba(0,0,0,0.05); }
- .price { color: #10b981; font-weight: bold; }
- .loader { text-align: center; padding: 100px; font-weight: bold; font-size: 1.2rem; }
-
- :global(.dark-mode) select { background: #1e293b; color: white; border-color: #334155; }
- :global(.dark-mode) .bar-bg { background: #334155; }
+ .row { display: flex; justify-content: space-between; padding: 10px; border-bottom: 1px solid rgba(0,0,0,0.05); }
+ .modal { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.7); display: flex; justify-content: center; align-items: center; z-index: 1000; }
+ .modal-card { background: white; width: 400px; padding: 30px; border-radius: 20px; color: #333; }
+ .m-row { display: flex; justify-content: space-between; margin-bottom: 10px; border-bottom: 1px solid #eee; }
+ 
+ .refresh-btn { background: #eee; color: #333; border: 1px solid #ddd; padding: 10px 15px; border-radius: 10px; cursor: pointer; }
+ .report-btn { background: #4f46e5; color: white; border: none; padding: 10px 15px; border-radius: 10px; cursor: pointer; font-weight: bold; }
 </style>
