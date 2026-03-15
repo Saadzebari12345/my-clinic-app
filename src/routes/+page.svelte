@@ -2,224 +2,194 @@
  import { onMount } from 'svelte';
  import { supabase } from '$lib/supabaseClient';
 
- // ١. گۆڕاوێن ئاماران
+ // ١. گۆڕاوەکانی داشبۆرد
+ let stats = $state({
+  totalPatients: 0,
+  todayIncome: 0,
+  totalIncome: 0,
+  totalExpenses: 0,
+  netProfit: 0,
+  todayVisits: 0
+ });
+
+ let monthlyReport = $state({ patients: 0, income: 0, expenses: 0, profit: 0, show: false });
+ let recentVisits = $state<any[]>([]);
  let doctorId = $state(0);
  let isLoading = $state(true);
- 
- // هەلبژارتنا هەیڤێ بۆ ڕاپۆرتێ
- let selectedMonth = $state(new Date().getMonth() + 1);
- let selectedYear = $state(new Date().getFullYear());
-
- let stats = $state({ totalP: 0, todayInc: 0, totalInc: 0, totalExp: 0, profit: 0 });
- let monthlyReport = $state({ patients: 0, income: 0, expenses: 0, profit: 0 });
- let recentActivity = $state<any[]>([]);
-
- const months = [
-  { id: 1, name: 'January' }, { id: 2, name: 'February' }, { id: 3, name: 'March' },
-  { id: 4, name: 'April' }, { id: 5, name: 'May' }, { id: 6, name: 'June' },
-  { id: 7, name: 'July' }, { id: 8, name: 'August' }, { id: 9, name: 'September' },
-  { id: 10, name: 'October' }, { id: 11, name: 'November' }, { id: 12, name: 'December' }
- ];
 
  onMount(async () => {
   const storedId = localStorage.getItem('doctor_id');
   if (storedId) {
    doctorId = Number(storedId);
-   await loadDashboard();
+   await refreshDashboard();
   }
  });
 
- async function loadDashboard() {
+ async function refreshDashboard() {
   isLoading = true;
+  
+  // وەرگرتنی کاتی ئێستا بەو شێوازەی لە وێنەکەدا دیارە (DD/MM/YYYY)
   const now = new Date();
-  const todayStr = now.toDateString();
+  const todayStr = now.toLocaleDateString('en-CA'); // شێوازی YYYY-MM-DD بۆ بەراوردکردن
+  const currentMonth = now.getMonth();
+  const currentYear = now.getFullYear();
 
-  // ١. ئینانا هەمی داتایان ژ داتابەیسێ
+  // ١. هێنانی ژمارەی نەخۆشەکان
   const { count: pCount } = await supabase.from('patients').select('*', { count: 'exact', head: true }).eq('doctor_id', doctorId);
-  const { data: records } = await supabase.from('medical_records').select('fee, created_at, patients(name)').eq('doctor_id', doctorId);
-  const { data: exps } = await supabase.from('expenses').select('amount, created_at').eq('doctor_id', doctorId);
+  stats.totalPatients = pCount || 0;
 
-  // ٢. حسابکرنا داتایان ب لۆجیکەکێ ب هێز
-  if (records) {
-   let tInc = 0; let dInc = 0; let mInc = 0; let mPat = 0;
-   
-   records.forEach(r => {
-    const rFee = Number(r.fee) || 0;
-    tInc += rFee;
+  // ٢. هێنانی هەموو ڕاپۆرتە پزیشکییەکان (بۆ داهات)
+  const { data: allRecords, error: recErr } = await supabase
+   .from('medical_records')
+   .select('fee, created_at, patients(name)')
+   .eq('doctor_id', doctorId);
 
-    if (r.created_at) {
-     const rDate = new Date(r.created_at);
-     if (rDate.toDateString() === todayStr) dInc += rFee;
-     if ((rDate.getMonth() + 1) === selectedMonth && rDate.getFullYear() === selectedYear) {
-      mInc += rFee;
-      mPat++;
-     }
-    } else {
-     // ئەگەر تاریخ NULL بوو، ل داهاتێ گشتی زێدە بکە دا بەرزە نەبیت
-     mInc += rFee;
+  // ٣. هێنانی هەموو خەرجییەکان
+  const { data: allExpenses } = await supabase.from('expenses').select('amount, created_at').eq('doctor_id', doctorId);
+
+  if (allRecords) {
+   let tInc = 0; let dInc = 0; let mInc = 0; let mPat = 0; let dVis = 0;
+
+   allRecords.forEach(r => {
+    const feeVal = Number(r.fee) || 0;
+    const rDate = new Date(r.created_at);
+    const rDateStr = rDate.toLocaleDateString('en-CA');
+
+    tInc += feeVal; // کۆی داهاتی گشتی
+
+    // بەراوردکردنی ڕۆژ (ئەمڕۆ)
+    if (rDateStr === todayStr) {
+     dInc += feeVal;
+     dVis += 1;
+    }
+
+    // بەراوردکردنی مانگ
+    if (rDate.getMonth() === currentMonth && rDate.getFullYear() === currentYear) {
+     mInc += feeVal;
+     mPat += 1;
     }
    });
 
-   stats.totalInc = tInc;
-   stats.todayInc = dInc;
+   stats.totalIncome = tInc;
+   stats.todayIncome = dInc;
+   stats.todayVisits = dVis;
    monthlyReport.income = mInc;
    monthlyReport.patients = mPat;
-   recentActivity = records.slice(-5).reverse();
+   recentVisits = allRecords.slice(-6).reverse();
   }
 
-  if (exps) {
+  if (allExpenses) {
    let tExp = 0; let mExp = 0;
-   exps.forEach(e => {
-    const eAmt = Number(e.amount) || 0;
-    tExp += eAmt;
-    if (e.created_at) {
-     const eDate = new Date(e.created_at);
-     if ((eDate.getMonth() + 1) === selectedMonth && eDate.getFullYear() === selectedYear) mExp += eAmt;
+   allExpenses.forEach(e => {
+    const expVal = Number(e.amount) || 0;
+    const eDate = new Date(e.created_at);
+    tExp += expVal;
+
+    if (eDate.getMonth() === currentMonth && eDate.getFullYear() === currentYear) {
+     mExp += expVal;
     }
    });
-   stats.totalExp = tExp;
+   stats.totalExpenses = tExp;
    monthlyReport.expenses = mExp;
   }
 
-  stats.totalP = pCount || 0;
-  stats.profit = stats.totalInc - stats.totalExp;
+  stats.netProfit = stats.totalIncome - stats.totalExpenses;
   monthlyReport.profit = monthlyReport.income - monthlyReport.expenses;
+  
   isLoading = false;
- }
-
- // 🖨️ چاپکرنا ڕاپۆرتا دارایی یا هەیڤانە ب شێوازەکێ پڕۆفیشناڵ
- function printReport() {
-  const monthName = months.find(m => m.id === selectedMonth)?.name;
-  const win = window.open('', '', 'width=900,height=1000');
-  win?.document.write(`
-   <div style="font-family:sans-serif; padding:50px; border:2px solid #4f46e5; border-radius:15px;">
-    <h1 style="text-align:center; color:#4f46e5; margin-bottom:5px;">Monthly Financial Report</h1>
-    <p style="text-align:center; margin-top:0; font-weight:bold;">${monthName} ${selectedYear}</p>
-    <hr style="border:1px solid #eee; margin:20px 0;">
-    <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
-     <div style="padding:20px; background:#f0f9ff; border-radius:10px;">
-      <h3 style="margin:0; color:#0369a1;">Earnings</h3>
-      <p style="font-size:24px; font-weight:bold; margin:10px 0;">$${monthlyReport.income}</p>
-      <small>Total visits: ${monthlyReport.patients}</small>
-     </div>
-     <div style="padding:20px; background:#fef2f2; border-radius:10px;">
-      <h3 style="margin:0; color:#991b1b;">Expenses</h3>
-      <p style="font-size:24px; font-weight:bold; margin:10px 0;">$${monthlyReport.expenses}</p>
-     </div>
-    </div>
-    <div style="margin-top:30px; padding:25px; background:#f0fdf4; border-radius:10px; text-align:center;">
-     <h2 style="margin:0; color:#15803d;">Net Profit</h2>
-     <p style="font-size:35px; font-weight:900; margin:10px 0;">$${monthlyReport.profit}</p>
-    </div>
-    <div style="margin-top:50px; border-top:1px solid #ddd; padding-top:20px; display:flex; justify-content:space-between; font-size:12px; color:#666;">
-     <span>Generated by E-Clinic Digital System</span>
-     <span>Signature: _________________</span>
-    </div>
-   </div>
-  `);
-  win?.document.close();
-  win?.print();
  }
 </script>
 
-<div class="dashboard">
+<div class="dash-container">
  <header class="dash-header">
-  <div class="title">
-   <h1>Clinic Analytics 📊</h1>
-   <p>کورتیا دارایی و گەشەیا کلینیکێ</p>
-  </div>
-  <div class="actions">
-   <select bind:value={selectedMonth} onchange={loadDashboard}>
-    {#each months as m}<option value={m.id}>{m.name}</option>{/each}
-   </select>
-   <button class="btn-print" onclick={printReport}>🖨️ Print A4 Report</button>
-   <button class="btn-refresh" onclick={loadDashboard}>🔄</button>
+  <h1>ناڤەندا کۆنترۆڵا کلینیکێ 🏥</h1>
+  <div class="header-actions">
+   <button class="btn-refresh" onclick={refreshDashboard}>{isLoading ? '...' : '🔄 نووژەنکرن'}</button>
+   <button class="btn-report" onclick={() => monthlyReport.show = true}>📊 ڕاپۆرتا مەهانە</button>
   </div>
  </header>
 
- {#if isLoading}
-  <div class="loading">📊 Loading data from database...</div>
- {:else}
-  <!-- کارتێن ئاماران -->
-  <div class="stats-grid">
-   <div class="card blue"><p>Total Patients</p><h3>{stats.totalP}</h3></div>
-   <div class="card green"><p>Today's Income</p><h3>${stats.todayInc}</h3></div>
-   <div class="card indigo"><p>Total Income</p><h3>${stats.totalInc}</h3></div>
-   <div class="card red"><p>Total Expenses</p><h3>${stats.totalExp}</h3></div>
-  </div>
+ <!-- کارتێن ڕەنگاوڕەنگ -->
+ <div class="stats-grid">
+  <div class="card blue"><p>نەخۆشێن گشتی</p><h3>{stats.totalPatients}</h3></div>
+  <div class="card green"><p>داهاتێ ئەڤرۆ</p><h3>${stats.todayIncome}</h3></div>
+  <div class="card indigo"><p>داهاتێ گشتی</p><h3>${stats.totalIncome}</h3></div>
+  <div class="card red"><p>کۆما خەرجییان</p><h3>${stats.totalExpenses}</h3></div>
+ </div>
 
-  <div class="main-grid">
-   <!-- ڕاپۆرتا هەیڤێ -->
-   <div class="glass-card">
-    <div class="card-head">
-     <h3>📈 Monthly Summary</h3>
-     <span class="badge">{months.find(m => m.id === selectedMonth)?.name}</span>
-    </div>
-    <div class="monthly-stats">
-     <div class="row"><span>Monthly Income:</span> <b style="color:#10b981">+${monthlyReport.income}</b></div>
-     <div class="row"><span>Monthly Expenses:</span> <b style="color:#f43f5e">-${monthlyReport.expenses}</b></div>
-     <div class="total-row">
-      <p>Monthly Net Profit</p>
-      <h2 style="color: {monthlyReport.profit >= 0 ? '#10b981' : '#f43f5e'}">${monthlyReport.profit}</h2>
+ <div class="main-content">
+  <!-- قازانجا سافی -->
+  <div class="glass-card">
+   <h3>📈 کورتیا قازانجا سافی</h3>
+   <div class="profit-box" style="color: {stats.netProfit >= 0 ? '#10b981' : '#f43f5e'}">
+    ${stats.netProfit}
+   </div>
+   <div class="summary">
+    <div class="s-item"><span>داهات (+)</span> <b style="color:#10b981">${stats.totalIncome}</b></div>
+    <div class="s-item"><span>خەرجی (-)</span> <b style="color:#f43f5e">${stats.totalExpenses}</b></div>
+   </div>
+  </div><!-- نویترین سەرەدان -->
+  <div class="glass-card">
+   <h3>🕒 نویترین سەرەدانێن تۆمارکری</h3>
+   <div class="visit-list">
+    {#each recentVisits as v}
+     <div class="v-row">
+      <span>{v.patients?.name || 'نەخۆش'}</span>
+      <b style="color:#10b981">+${v.fee}</b>
      </div>
-    </div>
-   </div>
-
-   <!-- نویترین چالاکی -->
-   <div class="glass-card">
-    <h3>🕒 Recent Activity</h3>
-    <div class="activity-list">
-     {#each recentActivity as item}
-      <div class="item">
-       <b>{item.patients?.name || 'Patient'}</b>
-       <span class="price">+${item.fee}</span>
-      </div>
-     {:else}
-      <p class="empty">No records found for this doctor.</p>
-     {/each}
-    </div>
+    {:else}
+     <p class="empty">چو داتا نینن.</p>
+    {/each}
    </div>
   </div>
- {/if}
+ </div>
 </div>
 
+<!-- ڕاپۆرتا مەهانە -->
+{#if monthlyReport.show}
+ <!-- svelte-ignore a11y_click_events_have_key_events -->
+ <!-- svelte-ignore a11y_no_static_element_interactions -->
+ <div class="modal-bg" onclick={() => monthlyReport.show = false}>
+  <div class="modal-content" onclick={e => e.stopPropagation()}>
+   <h3>📊 ڕاپۆرتا دارایی یا ڤێ هەیڤێ</h3>
+   <hr style="opacity:0.1" />
+   <div class="m-row"><span>نەخۆشێن هەیڤێ:</span> <b>{monthlyReport.patients}</b></div>
+   <div class="m-row"><span>داهاتێ هەیڤێ:</span> <b style="color:#10b981">+${monthlyReport.income}</b></div>
+   <div class="m-row"><span>خەرجیێن هەیڤێ:</span> <b style="color:#f43f5e">-${monthlyReport.expenses}</b></div>
+   <div class="m-result">
+    <p>قازانجا هەیڤێ</p>
+    <h2 style="color: {monthlyReport.profit >= 0 ? '#10b981' : '#f43f5e'}">${monthlyReport.profit}</h2>
+   </div>
+   <button class="close-btn" onclick={() => monthlyReport.show = false}>داخستن</button>
+  </div>
+ </div>
+{/if}
+
 <style>
- .dashboard { color: var(--text); padding: 10px; font-family: sans-serif; }
- .dash-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; flex-wrap: wrap; gap: 15px; }
- .dash-header h1 { margin: 0; color: #4f46e5; }
+ .dash-container { color: var(--text); padding: 15px; font-family: sans-serif; }
+ .dash-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; }
+ .header-actions { display: flex; gap: 10px; }
  
- .actions { display: flex; gap: 10px; }
- select { padding: 10px; border-radius: 10px; border: 1px solid #ddd; background: white; color: black; font-weight: bold; }
- .btn-print { background: #111827; color: white; border: none; padding: 10px 20px; border-radius: 10px; cursor: pointer; font-weight: bold; }
- .btn-refresh { background: #f3f4f6; border: 1px solid #ddd; padding: 10px 15px; border-radius: 10px; cursor: pointer; }
+ .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 30px; }
+ .card { padding: 25px; border-radius: 20px; color: white; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }
+ .blue { background: #4f46e5; } .green { background: #10b981; } .indigo { background: #6366f1; } .red { background: #f43f5e; }
+ h3 { margin: 5px 0 0; font-size: 1.8rem; }
+ p { margin: 0; font-size: 0.8rem; font-weight: bold; opacity: 0.8; }
 
- .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; margin-bottom: 30px; }
- .card { padding: 25px; border-radius: 20px; color: white; text-align: center; box-shadow: 0 10px 15px rgba(0,0,0,0.1); transition: 0.3s; }
- .card:hover { transform: translateY(-5px); }
+ .main-content { display: grid; grid-template-columns: 1fr 1.5fr; gap: 20px; }
+ .glass-card { background: var(--card, white); padding: 25px; border-radius: 25px; border: 1px solid var(--border); }
+ .profit-box { font-size: 3rem; font-weight: 900; text-align: center; margin: 15px 0; }
  
- .blue { background: linear-gradient(135deg, #4f46e5, #3b82f6); }
- .green { background: linear-gradient(135deg, #10b981, #059669); }
- .indigo { background: linear-gradient(135deg, #6366f1, #4f46e5); }
- .red { background: linear-gradient(135deg, #f43f5e, #be123c); }
- 
- .card h3 { margin: 10px 0 0; font-size: 2rem; font-weight: 900; }
- .card p { margin: 0; font-size: 0.8rem; font-weight: bold; opacity: 0.8; text-transform: uppercase; }
+ .s-item, .m-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid rgba(0,0,0,0.05); }
+ .v-row { display: flex; justify-content: space-between; padding: 12px; background: rgba(0,0,0,0.02); border-radius: 12px; margin-bottom: 8px; }
 
- .main-grid { display: grid; grid-template-columns: 1.2fr 1fr; gap: 25px; }
- @media (max-width: 1000px) { .main-grid { grid-template-columns: 1fr; } }
+ .btn-report { background: #4f46e5; color: white; border: none; padding: 10px 20px; border-radius: 12px; cursor: pointer; font-weight: bold; }
+ .btn-refresh { background: #f3f4f6; color: #333; border: 1px solid #ddd; padding: 10px 20px; border-radius: 12px; cursor: pointer; }
 
- .glass-card { background: var(--card, white); padding: 30px; border-radius: 25px; border: 1px solid var(--border, #eee); box-shadow: 0 4px 6px rgba(0,0,0,0.02); }
- .card-head { display: flex; justify-content: space-between; margin-bottom: 20px; }
- .badge { background: #eef2ff; color: #4f46e5; padding: 5px 12px; border-radius: 20px; font-weight: bold; font-size: 0.8rem; }
+ .modal-bg { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.7); display: flex; justify-content: center; align-items: center; z-index: 1000; }
+ .modal-content { background: white; width: 450px; padding: 30px; border-radius: 25px; color: #333; }
+ .m-result { text-align: center; margin-top: 20px; padding-top: 15px; border-top: 2px dashed #eee; }
+ .close-btn { width: 100%; margin-top: 20px; padding: 12px; background: #111827; color: white; border: none; border-radius: 12px; cursor: pointer; }
 
- .row { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid rgba(0,0,0,0.05); }
- .total-row { text-align: center; margin-top: 25px; padding-top: 20px; border-top: 2px dashed #eee; }
- .total-row h2 { font-size: 2.5rem; margin: 5px 0; font-weight: 900; }
-
- .item { display: flex; justify-content: space-between; padding: 12px; background: rgba(0,0,0,0.03); border-radius: 12px; margin-bottom: 10px; }
- .price { color: #10b981; font-weight: bold; }
- .loading { text-align: center; padding: 100px; font-weight: bold; }
-
- :global(.dark-mode) .glass-card, :global(.dark-mode) .item { background: #1e293b; border-color: #334155; }
- :global(.dark-mode) select { background: #1e293b; color: white; border-color: #334155; }
+ :global(.dark-mode) .glass-card, :global(.dark-mode) .modal-content, :global(.dark-mode) .v-row { background: #1e293b; color: white; border-color: #334155; }
 </style>
