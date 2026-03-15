@@ -2,131 +2,180 @@
  import { onMount } from 'svelte';
  import { supabase } from '$lib/supabaseClient';
 
- let stats = $state({ totalP: 0, todayInc: 0, totalInc: 0, totalExp: 0, profit: 0 });
- let monthlyReport = $state({ patients: 0, income: 0, expenses: 0, profit: 0, show: false });
- let recentVisits = $state<any[]>([]);
+ // ١. گۆڕاوێن داتایان
+ let stats = $state({ totalP: 0, todayV: 0, todayInc: 0, totalInc: 0, totalExp: 0, profit: 0 });
+ let recentActivity = $state<any[]>([]);
  let doctorId = $state(0);
  let isLoading = $state(true);
- let debugMsg = $state(""); // بۆ پشکنینا خەلەتییان
 
  onMount(async () => {
   const storedId = localStorage.getItem('doctor_id');
   if (storedId) {
    doctorId = Number(storedId);
-   await refreshData();
+   await loadExecutiveData();
   }
  });
 
- async function refreshData() {
+ async function loadExecutiveData() {
   isLoading = true;
   const now = new Date();
-  const todayStr = now.toLocaleDateString('en-CA'); // "2026-03-16"
-  const currentMonth = now.getMonth();
-  const currentYear = now.getFullYear();
+  const todayStr = now.toDateString();
 
-  // ١. ئینانا هەمی داتایان ژ داتابەیسێ
-  const { count: pCount } = await supabase.from('patients').select('*', { count: 'exact', head: true }).eq('doctor_id', doctorId);
-  const { data: records, error: rErr } = await supabase.from('medical_records').select('fee, created_at, patients(name)').eq('doctor_id', doctorId);
-  const { data: exps } = await supabase.from('expenses').select('amount, created_at').eq('doctor_id', doctorId);
+  // ئینانا هەمی داتایان ب ئێکجار دا خێرایی زێدە بیت
+  const [recs, exps, patients] = await Promise.all([
+   supabase.from('medical_records').select('fee, created_at, patients(name), diagnosis').eq('doctor_id', doctorId),
+   supabase.from('expenses').select('amount, created_at').eq('doctor_id', doctorId),
+   supabase.from('patients').select('*', { count: 'exact', head: true }).eq('doctor_id', doctorId)
+  ]);
 
-  if (rErr) debugMsg = "Database Error: " + rErr.message;
-
-  if (records) {
-   let tInc = 0; let dInc = 0; let mInc = 0; let mPat = 0;
-   
-   records.forEach(r => {
+  // حسابکرنا داتایێن دارایی ب ڕێکا JavaScript دا چو خەلەتی نەمینن
+  if (recs.data) {
+   let tInc = 0; let dInc = 0; let dVis = 0;
+   recs.data.forEach(r => {
     const rFee = Number(r.fee) || 0;
-    const rDate = new Date(r.created_at);
-    const rDateStr = rDate.toLocaleDateString('en-CA');
-
+    const rDate = new Date(r.created_at).toDateString();
     tInc += rFee;
-
-    // پشکنینا "ئەڤرۆ" ب شێوازەکێ گونجای بۆ هەمی Timezone-ان
-    if (rDateStr === todayStr) {
-     dInc += rFee;
-    }
-
-    if (rDate.getMonth() === currentMonth && rDate.getFullYear() === currentYear) {
-     mInc += rFee;
-     mPat++;
-    }
+    if (rDate === todayStr) { dInc += rFee; dVis++; }
    });
-
    stats.totalInc = tInc;
    stats.todayInc = dInc;
-   monthlyReport.income = mInc;
-   monthlyReport.patients = mPat;
-   recentVisits = records.slice(-5).reverse();
-   
-   if (records.length > 0 && dInc === 0) {
-    debugMsg = "Data found, but none matches Today's Date: " + todayStr;
-   }
+   stats.todayV = dVis;
+   recentActivity = recs.data.slice(-5).reverse();
   }
 
-  if (exps) {
-   let tExp = 0; let mExp = 0;
-   exps.forEach(e => {
-    const eAmt = Number(e.amount) || 0;
-    const eDate = new Date(e.created_at);
-    tExp += eAmt;
-    if (eDate.getMonth() === currentMonth && eDate.getFullYear() === currentYear) mExp += eAmt;
-   });
-   stats.totalExp = tExp;
-   monthlyReport.expenses = mExp;
+  if (exps.data) {
+   stats.totalExp = exps.data.reduce((s, e) => s + (Number(e.amount) || 0), 0);
   }
 
-  stats.totalP = pCount || 0;
+  stats.totalP = patients.count || 0;
   stats.profit = stats.totalInc - stats.totalExp;
-  monthlyReport.profit = monthlyReport.income - monthlyReport.expenses;
   isLoading = false;
  }
 </script>
 
-<div class="dashboard">
- <header class="header">
-  <h1>ناڤەندا کۆنترۆڵا کلینیکێ 🏥</h1>
-  <button class="btn-refresh" onclick={refreshData}>🔄 Update Status</button>
+<div class="executive-dashboard">
+ <!-- Header Section -->
+ <header class="hero">
+  <div class="welcome">
+   <h1>سڵاڤ دکتۆر! 👋</h1>
+   <p>ئەڤە کورتیا هەمی چالاکیێن کلینیکا تە یە بۆ ئەڤرۆ.</p>
+  </div>
+  <button class="refresh-pill" onclick={loadExecutiveData} class:loading={isLoading}>
+   {isLoading ? '...' : '🔄 نووژەنکرنا داتایان'}
+  </button>
  </header>
 
- <div class="stats-grid">
-  <div class="card blue"><p>نەخۆش</p><h3>{stats.totalP}</h3></div>
-  <div class="card green"><p>داهاتێ ئەڤرۆ</p><h3>${stats.todayInc}</h3></div>
-  <div class="card indigo"><p>داهاتێ گشتی</p><h3>${stats.totalInc}</h3></div>
-  <div class="card red"><p>خەرجی</p><h3>${stats.totalExp}</h3></div>
+ <!-- Main Stats Grid -->
+ <div class="main-stats">
+  <div class="stat-glass blue">
+   <span class="label">کۆما نەخۆشان</span>
+   <h2 class="value">{stats.totalP}</h2>
+   <div class="mini-chart">👥 Registered</div>
+  </div>
+  <div class="stat-glass green">
+   <span class="label">داهاتێ ئەڤرۆ</span>
+   <h2 class="value">${stats.todayInc}</h2>
+   <div class="mini-chart">📈 +{stats.todayV} Visits</div>
+  </div>
+  <div class="stat-glass purple">
+   <span class="label">قازانجا گشتی</span>
+   <h2 class="value">${stats.profit}</h2>
+   <div class="mini-chart">💰 Total Balance</div>
+  </div>
+  <div class="stat-glass red">
+   <span class="label">کۆما خەرجییان</span>
+   <h2 class="value">${stats.totalExp}</h2>
+   <div class="mini-chart">📉 Expenses Log</div>
+  </div>
  </div>
 
- <div class="main-grid">
-  <div class="card glass">
-   <h3>📈 قازانجا سافی</h3>
-   <h2 style="color: {stats.profit >= 0 ? '#10b981' : '#f43f5e'}">${stats.profit}</h2>
+ <div class="details-grid">
+  <!-- Finance Card -->
+  <div class="card glass-card">
+   <h3>📊 باری دارایی (Financial Health)</h3>
+   <div class="progress-container">
+    <div class="bar-info">
+     <span>داهاتێ گشتی</span>
+     <b>${stats.totalInc}</b>
+    </div>
+    <div class="progress-bg"><div class="progress-fill green" style="width: 100%"></div></div>
+    
+    <div class="bar-info" style="margin-top:20px;">
+     <span>خەرجیێن کلینیکێ</span>
+     <b>${stats.totalExp}</b>
+    </div>
+    <div class="progress-bg">
+     <div class="progress-fill red" style="width: {stats.totalInc > 0 ? (stats.totalExp / stats.totalInc) * 100 : 0}%"></div>
+    </div>
+   </div>
+   <div class="profit-footer" style="color: {stats.profit >= 0 ? '#10b981' : '#f43f5e'}">
+    {stats.profit >= 0 ? '↗️ Your clinic is growing' : '⚠️ Expenses are high'}
+   </div>
   </div>
-  <div class="card glass">
-   <h3>🕒 نویترین چالاکی</h3>
-   {#each recentVisits as v}
-    <div class="row"><span>{v.patients?.name || 'Patient'}</span> <b>+${v.fee}</b></div>
-   {:else}
-    <p>چو داتا نەهاتینە دیتن.</p>
-   {/each}
+
+  <!-- Recent Timeline Card -->
+  <div class="card glass-card">
+   <h3>🕒 نویترین سەرەدانێن تۆمارکری</h3>
+   <div class="timeline">
+    {#each recentActivity as item}
+     <div class="timeline-item">
+      <div class="time-dot"></div>
+      <div class="time-content">
+       <b>{item.patients?.name || 'Unknown'}</b>
+       <span>{item.diagnosis || 'Consultation'}</span></div>
+      <div class="time-price">+${item.fee}</div>
+     </div>
+    {:else}
+     <p class="empty-msg">چو داتایێن دارایی نەهاتینە دیتن.</p>
+    {/each}
+   </div>
   </div>
  </div>
-
- <!-- 🛑 بەشێ پشکنینا خەلەتییان (بتنێ بۆ تە دیارە) -->
- {#if debugMsg}
-  <div style="margin-top:20px; padding:15px; background:#fff7ed; border:1px solid #f97316; border-radius:10px; font-size:0.8rem;">
-   <b>🛠️ Debug Info:</b> {debugMsg} <br>
-   <b>Your ID:</b> {doctorId} | <b>System Date:</b> {new Date().toLocaleDateString('en-CA')}
-  </div>
- {/if}
 </div>
 
 <style>
- .dashboard { color: var(--text); padding: 15px; font-family: sans-serif; }
- .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
- .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 30px; }
- .card { padding: 25px; border-radius: 20px; color: white; text-align: center; }
- .blue { background: #4f46e5; } .green { background: #10b981; } .indigo { background: #6366f1; } .red { background: #f43f5e; }
- .main-grid { display: grid; grid-template-columns: 1fr 1.5fr; gap: 20px; }
- .glass { background: var(--card, white); color: var(--text); border: 1px solid var(--border); border-radius: 20px; padding: 25px; }
- .row { display: flex; justify-content: space-between; padding: 10px; border-bottom: 1px solid rgba(0,0,0,0.05); }
- .btn-refresh { background: #4f46e5; color: white; border: none; padding: 10px 20px; border-radius: 10px; cursor: pointer; font-weight: bold; }
+ .executive-dashboard { padding: 20px; font-family: 'Inter', sans-serif; color: var(--text); }
+
+ .hero { display: flex; justify-content: space-between; align-items: center; margin-bottom: 40px; }
+ .hero h1 { font-size: 2.2rem; font-weight: 800; margin: 0; background: linear-gradient(to right, #4f46e5, #9333ea); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+ .hero p { opacity: 0.6; margin: 5px 0 0; }
+
+ .refresh-pill { background: white; border: 1px solid #e2e8f0; padding: 10px 20px; border-radius: 50px; cursor: pointer; font-weight: 600; box-shadow: 0 4px 6px rgba(0,0,0,0.02); transition: 0.3s; }
+ .refresh-pill:hover { background: #f8fafc; transform: translateY(-2px); }
+
+ .main-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 25px; margin-bottom: 40px; }
+ .stat-glass { padding: 30px; border-radius: 32px; color: white; position: relative; overflow: hidden; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); }
+ 
+ .blue { background: #4f46e5; }
+ .green { background: #10b981; }
+ .purple { background: #7c3aed; }
+ .red { background: #ef4444; }
+
+ .label { font-size: 0.8rem; font-weight: 600; text-transform: uppercase; opacity: 0.8; letter-spacing: 1px; }
+ .value { font-size: 2.5rem; font-weight: 800; margin: 10px 0; }
+ .mini-chart { font-size: 0.75rem; background: rgba(255,255,255,0.2); display: inline-block; padding: 4px 12px; border-radius: 20px; }
+
+ .details-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; }
+ @media (max-width: 900px) { .details-grid { grid-template-columns: 1fr; } }
+
+ .glass-card { background: var(--card, white); padding: 35px; border-radius: 32px; border: 1px solid var(--border, #f1f5f9); box-shadow: 0 10px 15px -3px rgba(0,0,0,0.04); }
+ 
+ .bar-info { display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 0.9rem; }
+ .progress-bg { background: #f1f5f9; height: 12px; border-radius: 10px; overflow: hidden; }
+ .progress-fill { height: 100%; border-radius: 10px; transition: width 1s ease-out; }
+ .progress-fill.green { background: #10b981; }
+ .progress-fill.red { background: #ef4444; }
+ .profit-footer { margin-top: 25px; text-align: center; font-weight: bold; font-size: 0.9rem; }
+
+ .timeline { margin-top: 20px; }
+ .timeline-item { display: flex; align-items: center; gap: 15px; padding: 15px 0; border-bottom: 1px solid rgba(0,0,0,0.03); }
+ .time-dot { width: 10px; height: 10px; background: #4f46e5; border-radius: 50%; }
+ .time-content { flex: 1; display: flex; flex-direction: column; }
+ .time-content b { font-size: 1rem; }
+ .time-content span { font-size: 0.8rem; opacity: 0.5; }
+ .time-price { font-weight: 800; color: #10b981; }
+
+ :global(.dark-mode) .glass-card { background: #1e293b; border-color: #334155; }
+ :global(.dark-mode) .progress-bg { background: #0f172a; }
+ :global(.dark-mode) .refresh-pill { background: #1e293b; color: white; border-color: #334155; }
 </style>
