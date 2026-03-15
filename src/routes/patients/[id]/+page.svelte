@@ -33,26 +33,27 @@
 
  onMount(loadAllData);
 
- async function saveRecord() {
-  if (!diagnosis || !treatment) return alert("تکایە خانەیان پڕ بکە");
-  isSaving = true;
+ async function addRecord() {
+    if (!diagnosis || !treatment) return alert("تکایە خانەیان پڕ بکە");
+    isSaving = true;
 
-  const recordData = {
-   patient_id: patientId, doctor_id: doctorId, diagnosis, treatment, notes, bp, temp, weight,
-   fee: Number(fee) || 0, created_at: new Date().toISOString()
-  };
+    const { data, error } = await supabase.from('medical_records').insert([{
+        patient_id: patientId,
+        doctor_id: doctorId, // پشتڕاستبە ئەڤە یێ درستە
+        diagnosis,
+        treatment,
+        notes,
+        fee: Number(fee) || 0, // ڤەگۆهۆڕین بۆ ژمارە
+        created_at: new Date().toISOString()
+    }]).select();
 
-  if (editingId) {
-   await supabase.from('medical_records').update(recordData).eq('id', editingId);
-  } else {
-   await supabase.from('medical_records').insert([recordData]);
-  }
-
-  editingId = null;
-  diagnosis = ''; treatment = ''; notes = ''; bp = ''; temp = ''; weight = ''; fee = '';
-  await loadAllData();
-  isSaving = false;
- }
+    if (!error) {
+        diagnosis = ''; treatment = ''; notes = ''; fee = '';
+        records = [data[0], ...records];
+        alert("✅ سەیڤ بوو");
+    }
+    isSaving = false;
+}
 
  function startEdit(record: MedicalRecord) {
   editingId = record.id;
@@ -156,7 +157,7 @@
    <textarea bind:value={treatment} placeholder="Treatment Plan & Medications..."></textarea>
    <div class="action-row">
     <input bind:value={fee} type="number" placeholder="Fee $" style="flex:1;" />
-    <button class="save-btn" onclick={saveRecord} style="flex:2;">💾 {editingId ? 'Update Record' : 'Save Record'}</button>
+    <button class="save-btn" onclick={addRecord} style="flex:2;">💾 {editingId ? 'Update Record' : 'Save Record'}</button>
    </div>
    {#if editingId}
     <button class="cancel-btn" onclick={() => { editingId = null; diagnosis = ''; treatment = ''; bp = ''; temp = ''; weight = ''; fee = ''; }}>Cancel Edit</button>
