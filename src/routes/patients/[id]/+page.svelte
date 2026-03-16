@@ -9,27 +9,29 @@
 
  let patientId = $derived(Number(page.params.id));
  let doctorId = $state(0);
- let doctorInfo = $state<any>(null); // زانیاریێن کلینیکێ یێن ئەدمین نڤیسین
+ let doctorInfo = $state<any>(null);
  let patientInfo = $state<Patient | null>(null);
  let records = $state<MedicalRecord[]>([]);
- let templates = $state<Template[]>([]); // قاڵبێن ئامادە
+ let templates = $state<Template[]>([]); 
  
  let diagnosis = $state(''), treatment = $state(''), notes = $state(''), fee = $state('');
  let bp = $state(''), temp = $state(''), weight = $state('');
  let isSaving = $state(false);
- let editingId = $state<number | null>(null); // بۆ فاکشنا Edit
+ let editingId = $state<number | null>(null);
  let selectedTemplateId = $state('');
 
  async function loadAllData() {
   const storedId = localStorage.getItem('doctor_id');
   if (storedId) doctorId = Number(storedId);
 
-  // ئینانا زانیاریێن دکتۆری، نەخۆشی، مێژوو، و قاڵبان ب ئێکجار
+  if (!patientId || !doctorId) return;
+
+  // ئینانا هەمی داتایان ب ئێکجار (نەخۆش، مێژوو، قاڵب، و دکتۆر)
   const [docRes, pRes, rRes, tRes] = await Promise.all([
    supabase.from('doctors').select('*').eq('id', doctorId).single(),
    supabase.from('patients').select('*').eq('id', patientId).single(),
    supabase.from('medical_records').select('*').eq('patient_id', patientId).order('created_at', { ascending: false }),
-   supabase.from('medical_templates').select('*').eq('doctor_id', doctorId)
+   supabase.from('medical_templates').select('*').eq('doctor_id', doctorId).order('title')
   ]);
 
   if (docRes.data) doctorInfo = docRes.data;
@@ -40,7 +42,6 @@
 
  onMount(loadAllData);
 
- // ✨ پڕکرنا خانەیان ب قاڵبێن ئامادە
  function applyTemplate() {
   const template = templates.find(t => t.id === Number(selectedTemplateId));
   if (template) {
@@ -52,34 +53,24 @@
  async function saveRecord() {
   if (!diagnosis || !treatment) return alert("Please fill details");
   isSaving = true;
-
   const recordData = {
-   patient_id: patientId, doctor_id: doctorId, diagnosis, treatment, notes, bp, temp, weight,
-   fee: Number(fee) || 0, created_at: new Date().toISOString()
+   patient_id: patientId, doctor_id: doctorId, diagnosis, treatment, notes, bp, temp, weight, fee: Number(fee) || 0
   };
-
   if (editingId) {
    await supabase.from('medical_records').update(recordData).eq('id', editingId);
-   alert("✅ Updated Successfully");
   } else {
    await supabase.from('medical_records').insert([recordData]);
-   alert("✅ Saved Successfully");
   }
-
   editingId = null;
   diagnosis = ''; treatment = ''; notes = ''; bp = ''; temp = ''; weight = ''; fee = '';
   await loadAllData();
   isSaving = false;
  }
 
- // ✏️ دەستپێکرنا فاکشنا Edit
  function startEdit(record: MedicalRecord) {
   editingId = record.id;
-  diagnosis = record.diagnosis;
-  treatment = record.treatment;
-  notes = record.notes;
-  bp = record.bp; temp = record.temp; weight = record.weight;
-  fee = record.fee.toString();
+  diagnosis = record.diagnosis; treatment = record.treatment; notes = record.notes;
+  bp = record.bp; temp = record.temp; weight = record.weight; fee = record.fee.toString();
   window.scrollTo({ top: 0, behavior: 'smooth' });
  }
 
@@ -90,109 +81,123 @@
   }
  }
 
- // 🖨️ چاپکرنا A4 یا جیهانی ب زانیاریێن ئەدمینی
  function printRx(record: MedicalRecord) {
-  const win = window.open('', '', 'width=900,height=1100');
+  const win = window.open('', '', 'width=900,height=1000');
   win?.document.write(`
-   <html>
-   <head>
-    <style>
-     @page { size: A4; margin: 15mm; }
-     body { font-family: 'Segoe UI', sans-serif; padding: 0; margin: 0; color: #1a1a1a; }
-     .page-border { border: 2px solid #4f46e5; padding: 40px; height: 94vh; border-radius: 20px; position: relative; box-sizing: border-box; }
-     .header { display: flex; justify-content: space-between; border-bottom: 4px solid #4f46e5; padding-bottom: 15px; margin-bottom: 30px; }
-     .clinic-title { font-size: 28px; font-weight: 900; color: #4f46e5; margin: 0; }
-     .patient-info { background: #f8fafc; padding: 20px; border-radius: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 15px; border: 1px solid #e2e8f0; margin-bottom: 40px; font-size: 15px; }
-     .content { min-height: 450px; font-size: 18px; line-height: 1.8; }
-     .footer { position: absolute; bottom: 40px; left: 40px; right: 40px; border-top: 1px solid #eee; padding-top: 20px; display: flex; justify-content: space-between; font-size: 12px; color: #94a3b8; }
-    </style>
-   </head>
-   <body>
-    <div class="page-border">
-     <div class="header">
-      <div>
-       <h1 class="clinic-title">${doctorInfo?.clinic_name || 'E-CLINIC CENTER'}</h1>
-       <p style="font-size:18px; font-weight:bold; margin:5px 0;">Dr. ${doctorInfo?.doctor_name || 'Specialist'}</p>
-      </div>
-      <div style="text-align:right; font-size:13px;">${doctorInfo?.clinic_address || ''}<br>Tel: ${doctorInfo?.clinic_phone || ''}</div>
-     </div>
-     <div class="patient-info">
-      <div><b>Patient:</b> ${patientInfo?.name}</div>
-      <div><b>Mobile:</b> ${patientInfo?.phone || 'N/A'}</div>
-      <div><b>Age / Gender:</b> ${patientInfo?.age}Y / ${patientInfo?.gender || 'N/A'}</div>
-      <div><b>Date:</b> ${new Date(record.created_at).toLocaleDateString('en-GB')}</div>
-     </div>
-     <div class="content">
-      <div style="font-size:60px; color:#4f46e5; font-style:italic; margin:0;">Rx</div>
-      <p><b>Diagnosis:</b> ${record.diagnosis}</p>
-      <p style="white-space: pre-line;"><b>Treatment:</b><br>${record.treatment}</p>
-     </div>
-     <div class="footer"><div>Printed by E-Clinic System</div><div style="text-align:center; width:200px; border-top:2px solid #333; padding-top:5px; font-weight:bold;">Signature</div></div>
-    </div>
-    <script>window.print(); window.close();<\/script>
-   </body>
-   </html>
+   <div style="font-family:sans-serif; padding:50px; border:2px solid #4f46e5; border-radius:15px;">
+    <h1 style="text-align:center; color:#4f46e5;">E-CLINIC MEDICAL REPORT</h1>
+    <p style="text-align:center;"><b>Dr. ${doctorInfo?.doctor_name || 'Specialist'}</b></p>
+    <hr>
+    <p><b>Patient:</b> ${patientInfo?.name} | <b>Date:</b> ${new Date(record.created_at).toLocaleDateString('en-GB')}</p>
+    <p><b>Mobile:</b> ${patientInfo?.phone || 'N/A'}</p>
+    <h3>Diagnosis:</h3><p>${record.diagnosis}</p>
+    <h3>Treatment:</h3><p style="white-space:pre-line;">${record.treatment}</p>
+    <div style="margin-top:50px; text-align:right;">Signature: _________________</div>
+   </div>
   `);
-  win?.document.close();
+  win?.document.close(); win?.print();
  }
 </script>
 
-<div class="container" style="max-width: 1200px; margin: 0 auto; padding: 10px; color: var(--text);">
- <header class="card" style="background: var(--card, white); padding: 20px; border-radius: 15px; border: 1px solid var(--border, #ddd); display: flex; justify-content: space-between; align-items: center; border-left: 6px solid #4f46e5; margin-bottom: 25px;">
-  <div class="p-info">
-   <h1 style="margin:0;">👤 {patientInfo?.name || 'Loading...'}</h1>
-   <p style="margin:5px 0 0; opacity:0.7;">{patientInfo?.age} years | {patientInfo?.phone}</p>
+<div class="profile-container">
+ <header class="card patient-header">
+  <div class="p-info"><h1>👤 {patientInfo?.name || '...'}</h1>
+   <p>{patientInfo?.age} years | {patientInfo?.phone}</p>
   </div>
-  <a href="/patients" style="text-decoration:none; font-weight:bold; color:#4f46e5;">⬅ Back to List</a>
+  <a href="/patients" class="back-link">⬅ Back to List</a>
  </header>
 
- <div class="main-grid" style="display: grid; grid-template-columns: 450px 1fr; gap: 20px;">
-  <!-- لایێ چەپێ: فۆرم -->
-  <div class="card" style="background: var(--card, white); padding: 25px; border-radius: 15px; border: 1px solid var(--border, #ddd);">
-   <h3 style="margin-top:0;">{editingId ? '✏️ Edit Consultation' : '📝 New Consultation'}</h3>
+ <div class="main-grid">
+  <!-- فۆرما نڤیسینێ -->
+  <div class="card form-container">
+   <h3>{editingId ? '✏️ Edit consultation' : '📝 New Consultation'}</h3>
    
-   <!-- ⚡ پشکا قاڵبان -->
-   <div style="margin-bottom: 15px; background: #f0f4ff; padding: 12px; border-radius: 10px; border: 1px solid #dbeafe;">
-    <label for="t-sel" style="font-size: 0.75rem; font-weight: bold; display: block; margin-bottom: 5px; color:#1e40af;">⚡ Quick Template</label>
-    <select id="t-sel" bind:value={selectedTemplateId} onchange={applyTemplate} style="width: 100%; padding: 8px; border-radius: 8px;">
+   <div class="template-section">
+    <label for="ts">⚡ Quick Template</label>
+    <select id="ts" bind:value={selectedTemplateId} onchange={applyTemplate}>
      <option value="">-- Choose Ready Template --</option>
      {#each templates as t}<option value={t.id}>{t.title}</option>{/each}
     </select>
    </div>
 
-   <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 12px;">
-    <input bind:value={bp} placeholder="BP" style="padding:10px; border-radius:8px; border:1px solid #ccc;"/>
-    <input bind:value={temp} placeholder="T°C" style="padding:10px; border-radius:8px; border:1px solid #ccc;"/>
-    <input bind:value={weight} placeholder="Weight" style="padding:10px; border-radius:8px; border:1px solid #ccc;"/>
+   <div class="vitals-row">
+    <!-- svelte-ignore a11y_label_has_associated_control -->
+    <div class="v-field"><label>BP</label><input bind:value={bp} placeholder="120/80" /></div>
+    <!-- svelte-ignore a11y_label_has_associated_control -->
+    <div class="v-field"><label>T°C</label><input bind:value={temp} placeholder="37" /></div>
+    <!-- svelte-ignore a11y_label_has_associated_control -->
+    <div class="v-field"><label>Weight</label><input bind:value={weight} placeholder="Kg" /></div>
    </div>
-   <input bind:value={diagnosis} placeholder="Diagnosis" style="width:100%; padding:12px; margin-bottom:12px; border-radius:8px; border:1px solid #ccc;"/><textarea bind:value={treatment} placeholder="Treatment & Plan..." style="width:100%; height:120px; padding:12px; border-radius:8px; border:1px solid #ccc; resize:none;"></textarea>
-   <input bind:value={fee} type="number" placeholder="Fee $" style="width:100%; padding:10px; margin-bottom:15px; border-radius:8px; border:1px solid #ccc;"/>
-   
-   <button onclick={saveRecord} disabled={isSaving} style="width:100%; padding:14px; background:#4f46e5; color:white; border:none; border-radius:10px; cursor:pointer; font-weight:bold;">
-    {isSaving ? '...' : (editingId ? '💾 Update Record' : '💾 Save Record')}
-   </button>
-   {#if editingId}<button onclick={() => editingId = null} style="width:100%; margin-top:5px; background:none; border:none; color:#666; cursor:pointer;">Cancel Edit</button>{/if}
+
+   <div class="field">
+    <!-- svelte-ignore a11y_label_has_associated_control -->
+    <label>Diagnosis</label>
+    <input bind:value={diagnosis} placeholder="Condition name..." />
+   </div>
+
+   <div class="field">
+    <!-- svelte-ignore a11y_label_has_associated_control -->
+    <label>Treatment Plan</label>
+    <textarea bind:value={treatment} placeholder="Medications..."></textarea>
+   </div>
+
+   <div class="footer-row">
+    <!-- svelte-ignore a11y_label_has_associated_control -->
+    <div class="f-item"><label>Fee $</label><input type="number" bind:value={fee} placeholder="0.00" /></div>
+    <button class="save-btn" onclick={saveRecord}>{editingId ? 'Update' : 'Save'}</button>
+   </div>
   </div>
 
-  <!-- لایێ ڕاستێ: مێژوو -->
-  <div class="history">
-   <h3 style="margin-top:0;">📜 Medical History ({records.length})</h3>
-   {#each records as r (r.id)}
-    <div class="card" style="background: var(--card, white); padding: 18px; border-radius: 12px; border: 1px solid var(--border, #ddd); border-left: 5px solid #10b981; margin-bottom: 15px;">
-     <div style="display:flex; justify-content:space-between; margin-bottom:12px;">
-      <span style="font-weight:bold; font-size:0.8rem; color:#10b981;">📅 {new Date(r.created_at).toLocaleString('en-GB')}</span>
-      <div style="display:flex; gap:5px;">
-       <button onclick={() => printRx(r)} style="background:#f3f4f6; border:none; padding:5px 10px; border-radius:6px; cursor:pointer; font-weight:bold;">🖨️ Print</button>
-       <button onclick={() => startEdit(r)} style="background:#e0f2fe; color:#0369a1; border:none; padding:5px 10px; border-radius:6px; cursor:pointer; font-weight:bold;">✏️ Edit</button>
-       <button onclick={() => deleteRecord(r.id)} style="background:#fee2e2; color:#dc2626; border:none; padding:5px 10px; border-radius:6px; cursor:pointer;">🗑️</button>
+  <!-- مێژوو -->
+  <div class="history-list">
+   <h3>📜 History ({records.length})</h3>
+   {#each records as record (record.id)}
+    <div class="record card">
+     <div class="r-head">
+      <span>📅 {new Date(record.created_at).toLocaleString('en-GB')}</span>
+      <div class="r-btns">
+       <button class="b-p" onclick={() => printRx(record)}>🖨️ Print</button>
+       <button class="b-e" onclick={() => startEdit(record)}>✏️ Edit</button>
+       <button class="b-d" onclick={() => deleteRecord(record.id)}>🗑️</button>
       </div>
      </div>
-     <b style="font-size:1.1rem;">{r.diagnosis}</b>
-     <p style="font-size:0.95rem; margin-top:8px; line-height:1.5;">{r.treatment}</p>
+     <b>{record.diagnosis}</b>
+     <p>{record.treatment}</p>
     </div>
-   {:else}
-    <div style="text-align:center; padding:50px; border:2px dashed #ddd; border-radius:15px; color:#999;">No history found.</div>
    {/each}
   </div>
  </div>
 </div>
+
+<style>
+ .profile-container { max-width: 1200px; margin: 0 auto; color: var(--text); padding: 10px; }
+ .card { background: var(--card, white); padding: 25px; border-radius: 20px; border: 1px solid var(--border, #ddd); margin-bottom: 20px; }
+ .patient-header { display: flex; justify-content: space-between; align-items: center; border-left: 6px solid #4f46e5; }
+ 
+ .main-grid { display: grid; grid-template-columns: 420px 1fr; gap: 20px; }
+ @media (max-width: 1000px) { .main-grid { grid-template-columns: 1fr; } }
+
+ .template-section { background: rgba(79, 70, 229, 0.05); padding: 12px; border-radius: 12px; margin-bottom: 15px; border: 1px solid rgba(79, 70, 229, 0.1); }
+ .template-section label { font-size: 0.75rem; font-weight: bold; color: #4f46e5; display: block; margin-bottom: 5px; }
+ .template-section select { width: 100%; padding: 8px; border-radius: 8px; border: 1px solid #ccc; background: white; color: black; }
+
+ .vitals-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 15px; }
+ .v-field label { font-size: 0.7rem; font-weight: bold; display: block; margin-bottom: 3px; }
+
+ input, textarea { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid var(--border, #ccc); background: white !important; color: black !important; box-sizing: border-box; }
+ textarea { height: 100px; resize: none; margin-top: 5px; }
+ 
+ .footer-row { display: flex; gap: 10px; align-items: flex-end; margin-top: 10px; }
+ .f-item { flex: 1; }
+ .f-item label { font-size: 0.7rem; font-weight: bold; display: block; margin-bottom: 3px; }
+ .save-btn { flex: 2; height: 45px; background: #4f46e5; color: white; border: none; border-radius: 10px; cursor: pointer; font-weight: bold; }
+
+ .record { border-left: 5px solid #10b981; }
+ .r-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-size: 0.8rem; font-weight: bold; color: #10b981; }
+ .r-btns button { border: none; padding: 5px 10px; border-radius: 6px; cursor: pointer; margin-left: 5px; font-weight: bold; }
+ .b-p { background: #f3f4f6; color: #333; }
+ .b-e { background: #e0f2fe; color: #0369a1; }
+ .b-d { background: #fee2e2; color: #dc2626; }
+
+ .back-link { text-decoration: none; color: #4f46e5; font-weight: bold; }
+</style>
