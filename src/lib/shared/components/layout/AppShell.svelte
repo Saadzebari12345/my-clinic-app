@@ -28,16 +28,21 @@
     
     <nav class="nav-menu">
      <a href="/" class="nav-item {isActive('/') ? 'active' : ''}">🏠 Dashboard</a>
-      <a href="/expenses" class="nav-item {isActive('/expenses') ? 'active' : ''}">
-  <span class="icon">💸</span> Expenses
-</a>
+     
  <a href="/patients" class="nav-item {isActive('/patients') ? 'active' : ''}">👥 Patients</a>
+  <a href="/appointments" class="nav-item {isActive('/appointments') ? 'active' : ''}">📅 Appointments</a>
     <a href="/lab" class="nav-item {isActive('/lab') ? 'active' : ''}">
   <span class="icon">🧪</span> Lab Request
 </a>
+<a href="/templates" class="nav-item {isActive('/templates') ? 'active' : ''}">
+  <span class="icon">📝</span> Templates
+</a>
      
      
-      <a href="/appointments" class="nav-item {isActive('/appointments') ? 'active' : ''}">📅 Appointments</a>
+     
+       <a href="/expenses" class="nav-item {isActive('/expenses') ? 'active' : ''}">
+  <span class="icon">💸</span> Expenses
+</a>
       
       {#if role === 'admin'}
         <a href="/register" class="nav-item {isActive('/register') ? 'active' : ''}" style="border: 1px dashed #818cf8;">👤 Create Account</a>
