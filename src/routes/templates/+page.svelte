@@ -2,25 +2,20 @@
  import { onMount } from 'svelte';
  import { supabase } from '$lib/supabaseClient';
 
- interface Template {
-  id: number;
-  title: string;
-  diagnosis: string;
-  treatment: string;
- }
-
- let templates = $state<Template[]>([]);
+ let templates = $state<any[]>([]);
  let title = $state(''), diag = $state(''), treat = $state('');
  let doctorId = $state(0);
  let isSaving = $state(false);
- let editingId = $state<number | null>(null); // بۆ زانینا كا كیش قاڵب دهێته‌ گۆهۆڕین
 
  async function fetchTemplates() {
-  const { data } = await supabase
+  if (!doctorId) return;
+  const { data, error } = await supabase
    .from('medical_templates')
    .select('*')
    .eq('doctor_id', doctorId)
    .order('id', { ascending: false });
+  
+  if (error) console.error("Error fetching templates:", error.message);
   if (data) templates = data;
  }
 
@@ -32,160 +27,82 @@
   }
  });
 
- // 💾 سەیڤکرن یان نووژەنکرنا قاڵبی
- async function saveTemplate() {
-  if (!title || !diag) return alert("تکایە ناونیشان و دەستنیشانکرنێ پڕ بکە");
+ async function addTemplate() {
+  if (!title || !diag) return alert("تکایە ناڤێ قاڵبی و دەستنیشانکرنێ بنڤیسە");
+  
   isSaving = true;
-
-  const templateData = {
+  const { data, error } = await supabase.from('medical_templates').insert([{
    doctor_id: doctorId,
    title: title,
    diagnosis: diag,
    treatment: treat
-  };
+  }]).select(); // .select() دێ داتایا نوی ئێکسەر زڤڕینیت
 
-  if (editingId) {
-   // Update - دەستکاری کرنا قاڵبێ کۆن
-   const { error } = await supabase
-    .from('medical_templates')
-    .update(templateData)
-    .eq('id', editingId);
-   if (!error) alert("✅ قاڵب ب سەرکەفتی هاتە نووژەنکرن");
-  } else {
-   // Insert - زێدەکرنا قاڵبەکێ نوی
-   const { error } = await supabase
-    .from('medical_templates')
-    .insert([templateData]);
-   if (!error) alert("✅ قاڵبێ نوی هاتە سەیڤکرن");
+  if (!error && data) {
+   templates = [data[0], ...templates]; // زێدەکرنا ئێکسەر بۆ سەر شاشێ
+   title = ''; diag = ''; treat = '';
+   alert("✅ قاڵب ب سەرکەفتی هاتە سەیڤکرن");
+  } else if (error) {
+   // ئەگەر خەلەتی هەبیت دێ لێرە ب تە بێژیت (بۆ نموونە کێشا RLS)
+   alert("خەلەتی ل داتابەیسێ: " + error.message);
   }
-
-  cancelEdit();
-  await fetchTemplates();
   isSaving = false;
  }
 
- // ✏️ دەستپێکرنا دەستکاریێ
- function startEdit(t: Template) {
-  editingId = t.id;
-  title = t.title;
-  diag = t.diagnosis;
-  treat = t.treatment;
-  window.scrollTo({ top: 0, behavior: 'smooth' }); // چوون بۆ سەرێ لاپەڕەی ب شێوەیەکێ نەرم
- }
-
- // ❌ هەڵوەشاندنەوەیا دەستکاریێ
- function cancelEdit() {
-  editingId = null;
-  title = ''; diag = ''; treat = '';
- }
-
- // 🗑️ ژێبرنا قاڵبی
  async function deleteTemplate(id: number) {
-  if (confirm('ئەرێ تو پشتراستی تو دڤێت ڤی قاڵبی ژێببەی؟')) {
-   await supabase.from('medical_templates').delete().eq('id', id);
-   await fetchTemplates();
+  if (confirm('ئەرێ تو پشتراستی؟')) {
+   const { error } = await supabase.from('medical_templates').delete().eq('id', id);
+   if (!error) templates = templates.filter(t => t.id !== id);
   }
  }
 </script>
 
 <div class="templates-page">
- <div class="header-section">
-  <h2>📝 Manage Medical Templates</h2>
-  <p>Create and edit ready-to-use prescriptions for common diseases.</p>
- </div>
+ <h2>📝 Manage Medical Templates</h2>
 
- <!-- فۆڕما زێدەکرن و دەستکاریێ -->
  <div class="card form-container">
-  <h3>{editingId ? '✏️ Edit Template' : '➕ Create New Template'}</h3>
-  
+  <h3>➕ Create New Template</h3>
   <div class="field">
-   <label for="t-title">Template Name (e.g. Hypertension Plan)</label>
-   <input id="t-title" bind:value={title} placeholder="Enter a title for this template..." />
+   <!-- svelte-ignore a11y_label_has_associated_control -->
+   <label>Template Name</label>
+   <input bind:value={title} placeholder="e.g. Common Cold" />
   </div>
-
   <div class="field">
-   <label for="t-diag">Default Diagnosis (دەستنیشانکرنا ئامادە)</label>
-   <input id="t-diag" bind:value={diag} placeholder="e.g. Acute Tonsillitis" />
+   <!-- svelte-ignore a11y_label_has_associated_control -->
+   <label>Default Diagnosis</label>
+   <input bind:value={diag} placeholder="Diagnosis details..." />
   </div>
-
   <div class="field">
-   <label for="t-treat">Default Treatment List (لیستا دەرمانێن ئامادە)</label>
-   <textarea id="t-treat" bind:value={treat} placeholder="Enter medications, dosage, and instructions..."></textarea>
+   <label>Default Treatment</label>
+   <textarea bind:value={treat} placeholder="List medications..."></textarea>
   </div>
-
-  <div class="button-group">
-   <button class="save-btn" onclick={saveTemplate} disabled={isSaving}>
-    {isSaving ? 'Saving...' : (editingId ? '💾 Update Template' : '💾 Save Template')}
-   </button>
-   
-   {#if editingId}
-    <button class="cancel-btn" onclick={cancelEdit}>Cancel</button>
-   {/if}
-  </div>
+  <button class="save-btn" onclick={addTemplate} disabled={isSaving}>
+   {isSaving ? 'Saving...' : '💾 Save Template'}
+  </button>
  </div>
 
- <!-- لیستا قاڵبێن هەین -->
- <div class="templates-grid">
+ <div class="grid">
   {#each templates as t (t.id)}
    <div class="template-card card">
-    <div class="card-header">
-     <span class="pill">Template</span>
-     <div class="actions">
-      <button class="edit-btn" onclick={() => startEdit(t)}>✏️</button>
-      <button class="del-btn" onclick={() => deleteTemplate(t.id)}>🗑️</button>
-     </div>
-    </div>
-    <h4>{t.title}</h4>
-    <div class="preview">
-     <b>Diagnosis:</b> {t.diagnosis} <br>
-     <b>Meds:</b> {t.treatment.substring(0, 50)}...
-    </div>
-   </div>
-  {:else}
-   <div class="empty-state">
-    <p>No templates found.Create your first medical template above! 🚀</p>
+    <button class="del" onclick={() => deleteTemplate(t.id)}>🗑️</button>
+    <b>{t.title}</b>
+    <p>{t.diagnosis}</p>
    </div>
   {/each}
  </div>
 </div>
 
 <style>
- .templates-page { max-width: 1000px; margin: 0 auto; color: var(--text); padding: 10px; }
- .header-section { margin-bottom: 30px; }
- .header-section h2 { margin: 0; color: #4f46e5; }
- .header-section p { opacity: 0.6; font-size: 0.9rem; margin-top: 5px; }
-
- .card { background: var(--card, white); padding: 25px; border-radius: 20px; border: 1px solid var(--border, #ddd); box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+ /* دیزاینێ پڕۆفیشناڵ */
+ .templates-page { max-width: 900px; margin: 0 auto; color: var(--text); padding: 10px; }
+ .card { background: var(--card, white); padding: 25px; border-radius: 15px; border: 1px solid var(--border, #ddd); margin-bottom: 25px; }
+ .field { margin-bottom: 12px; }
+ label { display: block; font-size: 0.8rem; font-weight: bold; margin-bottom: 5px; }
+ input, textarea { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #ccc; background: white; color: black; box-sizing: border-box; }
+ textarea { height: 80px; resize: none; }
+ .save-btn { width: 100%; padding: 14px; background: #4f46e5; color: white; border: none; border-radius: 10px; cursor: pointer; font-weight: bold; }
  
- .form-container { margin-bottom: 40px; border-top: 5px solid #4f46e5; }
- .form-container h3 { margin-top: 0; margin-bottom: 20px; font-size: 1.2rem; }
-
- .field { margin-bottom: 15px; }
- label { display: block; font-size: 0.85rem; font-weight: bold; margin-bottom: 6px; }
- input, textarea { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #ccc; background: white !important; color: black !important; box-sizing: border-box; font-family: inherit; }
- textarea { height: 120px; resize: none; }
-
- .button-group { display: flex; gap: 10px; margin-top: 10px; }
- .save-btn { flex: 2; padding: 14px; background: #4f46e5; color: white; border: none; border-radius: 12px; cursor: pointer; font-weight: bold; font-size: 1rem; transition: 0.3s; }
- .cancel-btn { flex: 1; padding: 14px; background: #94a3b8; color: white; border: none; border-radius: 12px; cursor: pointer; font-weight: bold; }
- .save-btn:hover { background: #4338ca; }
-
- .templates-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
- .template-card { border-left: 5px solid #6366f1; transition: 0.3s; }
- .template-card:hover { transform: translateY(-5px); }
- 
- .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
- .pill { background: #e0e7ff; color: #4338ca; padding: 3px 10px; border-radius: 20px; font-size: 0.7rem; font-weight: bold; text-transform: uppercase; }
- 
- .actions button { background: none; border: none; cursor: pointer; font-size: 1.1rem; padding: 5px; border-radius: 5px; transition: 0.2s; }
- .edit-btn:hover { background: #e0f2fe; }
- .del-btn:hover { background: #fee2e2; }
-
- .template-card h4 { margin: 0 0 10px 0; color: #1e293b; font-size: 1.1rem; }
- .preview { font-size: 0.85rem; color: #64748b; line-height: 1.5; }
-
- .empty-state { grid-column: 1 / -1; text-align: center; padding: 60px; border: 2px dashed #cbd5e1; border-radius: 20px; opacity: 0.6; }
-
- /* Dark Mode Fix */
- :global(.dark-mode) .template-card h4 { color: #f8fafc; }
+ .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+ .template-card { position: relative; border-left: 5px solid #4f46e5; }
+ .del { position: absolute; top: 10px; right: 10px; background: none; border: none; color: red; cursor: pointer; }
 </style>
