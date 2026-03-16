@@ -1,175 +1,197 @@
 <script lang="ts">
  import { onMount } from 'svelte';
  import { supabase } from '$lib/supabaseClient';
+ import { goto } from '$app/navigation';
 
- // ١. گۆڕاوێن داتایان
  let doctorId = $state(0);
  let docInfo = $state<any>(null);
  let isLoading = $state(true);
 
- let stats = $state({
-  totalP: 0,
-  todayInc: 0,
-  totalInc: 0,
-  totalExp: 0,
-  profit: 0,
-  todayVisits: 0
+ // داتایێن ژڤانان و ئاماران
+ let todayApps = $state<any[]>([]);
+ let stats = $state({ 
+  totalPatients: 0, 
+  waiting: 0, 
+  completed: 0,
+  todayIncome: 0,
+  todayExpenses: 0
  });
-
- let reportData = $state({ monthP: 0, monthE: 0, monthInc: 0 });
- let recentVisits = $state<any[]>([]);
 
  onMount(async () => {
   const id = localStorage.getItem('doctor_id');
   if (id) {
    doctorId = Number(id);
-   await loadAllDashboardData();
+   await loadDashboardData();
   }
  });
 
- async function loadAllDashboardData() {
+ async function loadDashboardData() {
   isLoading = true;
-  const now = new Date();
-  const todayStr = now.toDateString();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const today = new Date().toLocaleDateString('en-CA');
 
-  // ئینانا زانیاریێن دکتۆری
+  // ١. ئینانا زانیاریێن دکتۆری
   const { data: doc } = await supabase.from('doctors').select('*').eq('id', doctorId).single();
   docInfo = doc;
 
-  // ئینانا هەمی ڕاپۆرتێن پزیشکی (داهات)
-  const { data: recs } = await supabase.from('medical_records').select('fee, created_at, patients(name)').eq('doctor_id', doctorId);
-  
-  // ئینانا هەمی خەرجییان
-  const { data: exps } = await supabase.from('expenses').select('amount, created_at').eq('doctor_id', doctorId);
-  
-  // ئینانا کۆما نەخۆشان
-  const { count } = await supabase.from('patients').select('*', { count: 'exact', head: true }).eq('doctor_id', doctorId);
+  // ٢. ئینانا هەمی داتایێن ئەڤرۆ (ژڤان، داهات، خەرجی)
+  const [apps, patients, records, expenses] = await Promise.all([
+   supabase.from('appointments').select('*').eq('doctor_id', doctorId).eq('date', today).order('date', {ascending: true}),
+   supabase.from('patients').select('id', { count: 'exact', head: true }).eq('doctor_id', doctorId),
+   supabase.from('medical_records').select('fee, created_at').eq('doctor_id', doctorId),
+   supabase.from('expenses').select('amount, created_at').eq('doctor_id', doctorId)
+  ]);
 
-  if (recs) {
-   let tInc = 0; let dInc = 0; let dVis = 0; let mInc = 0; let mVis = 0;
-   recs.forEach(r => {
-    const rFee = Number(r.fee) || 0;
-    const rDate = new Date(r.created_at);
-    tInc += rFee;
-    if (rDate.toDateString() === todayStr) { dInc += rFee; dVis++; }
-    if (rDate >= monthStart) { mInc += rFee; mVis++; }
-   });
-   stats.totalInc = tInc;
-   stats.todayInc = dInc;
-   stats.todayVisits = dVis;
-   reportData.monthInc = mInc;
-   reportData.monthP = mVis;
-   recentVisits = recs.slice(-5).reverse();
+  // ڕێکخستنا ژڤانێن ئەڤرۆ
+  if (apps.data) {
+   todayApps = apps.data;
+   stats.waiting = todayApps.filter(a => a.status === 'Pending' || a.status === 'Confirmed').length;
+   stats.completed = todayApps.filter(a => a.status === 'Done').length;
   }
 
-  if (exps) {
-   let tExp = 0; let mExp = 0;
-   exps.forEach(e => {
-    const eAmt = Number(e.amount) || 0;
-    const eDate = new Date(e.created_at);
-    tExp += eAmt;
-    if (eDate >= monthStart) mExp += eAmt;
-   });
-   stats.totalExp = tExp;
-   reportData.monthE = mExp;
+  // ڕێکخستنا داهات و خەرجیێن ئەڤرۆ
+  if (records.data) {
+   stats.todayIncome = records.data
+    .filter(r => new Date(r.created_at).toLocaleDateString('en-CA') === today)
+    .reduce((s, r) => s + (Number(r.fee) || 0), 0);
+  }
+  if (expenses.data) {
+   stats.todayExpenses = expenses.data
+    .filter(e => new Date(e.created_at).toLocaleDateString('en-CA') === today)
+    .reduce((s, e) => s + (Number(e.amount) || 0), 0);
   }
 
-  stats.totalP = count || 0;
-  stats.profit = stats.totalInc - stats.totalExp;
+  stats.totalPatients = patients.count || 0;
   isLoading = false;
  }
 
- // 📱 فانکشنا واتساپێ (دگەل خەرجییان)
- function sendWhatsapp(type: 'daily' | 'monthly') {
-  if (!docInfo?.whatsapp_number) return alert("ژمارا واتساپێ ل دەف ئەدمینی نەهاتییە تۆمارکرن!");
+ // 📱 فرێکرنا ڕاپۆرتا دارایی بۆ واتساپێ
+ function sendReportToWhatsapp() {
+  if (!docInfo?.whatsapp_number) return alert("ژمارا واتساپێ نەهاتییە تۆمارکرن!");
   
-  const label = type === 'daily' ? "📋 ڕاپۆرتا ڕۆژانە" : "📊 ڕاپۆرتا مەهانە";
-  const pCount = type === 'daily' ? stats.todayVisits : reportData.monthP;
-  const income = type === 'daily' ? stats.todayInc : reportData.monthInc;
-  const expenses = type === 'daily' ? (stats.totalExp / 30).toFixed(0) : reportData.monthE; // خەمڵاندن بۆ ڕۆژانە
+  const profit = stats.todayIncome - stats.todayExpenses;
+  const message = `📋 ڕاپۆرتا ڕۆژانە یا کلینیکێ%0A----------%0A👨‍⚕️ دکتۆر: ${docInfo.doctor_name}%0A👥 نەخۆشێن ئەڤرۆ: ${stats.completed}%0A💰 داهاتێ ئەڤرۆ: $${stats.todayIncome}%0A💸 خەرجیێن ئەڤrۆ: $${stats.todayExpenses}%0A📈 قازانجا سافی: $${profit}%0A📅 ڕێکەفت: ${new Date().toLocaleDateString()}%0A----------%0Aسیستەمێ E-Clinic Pro`;
 
-  const msg = `${label}%0A----------%0A👨‍⚕️ دکتۆر: ${docInfo.doctor_name}%0A🏥 کلینیک: ${docInfo.clinic_name}%0A👥 نەخۆشێن تەمامبووی: ${pCount}%0A💰 داهات: $${income}%0A💸 خەرجی: $${expenses}%0A📅 ڕێکەفت: ${new Date().toLocaleDateString()}`;
-  
-  window.open(`https://wa.me/${docInfo.whatsapp_number}?text=${msg}`, '_blank');
+  window.open(`https://wa.me/${docInfo.whatsapp_number}?text=${message}`, '_blank');
  }
 </script>
 
-<div class="dashboard">
- <header class="dash-head">
-  <h1>ناڤەندا کۆنترۆڵا کلینیکێ 🏥</h1>
-  <button class="refresh-btn" onclick={loadAllDashboardData}>🔄 Update</button>
+<div class="pro-dashboard">
+ <!-- 🌟 Top Section -->
+ <header class="top-bar">
+  <div class="welcome">
+   <h1>سڵاڤ دکتۆر! 👋</h1>
+   <p>ئەڤرۆ <b>{stats.waiting}</b> نەخۆش ل هێڤییا تە نە.</p>
+  </div>
+  <button class="whatsapp-btn" onclick={sendReportToWhatsapp}>
+   <span>📱 فرێکرنا ڕاپۆرتێ بۆ واتساپێ</span>
+  </button>
  </header>
 
- <!-- ١. کارتێن ئامارێن سەرەکی -->
+ <!-- 📊 Stats Grid -->
  <div class="stats-grid">
-  <div class="stat-card blue"><p>نەخۆشێن گشتی</p><h3>{stats.totalP}</h3></div>
-  <div class="stat-card green"><p>داهاتێ ئەڤرۆ</p><h3>${stats.todayInc}</h3></div>
-  <div class="stat-card indigo"><p>کۆما داهاتی</p><h3>${stats.totalInc}</h3></div>
-  <div class="stat-card red"><p>کۆما خەرجییان</p><h3>${stats.totalExp}</h3></div>
+  <div class="s-card blue">
+   <span class="label">کۆما نەخۆشان</span>
+   <span class="value">{stats.totalPatients}</span>
+  </div>
+  <div class="s-card amber">
+   <span class="label">ل چاوەڕێیێ</span>
+   <span class="value">{stats.waiting}</span>
+  </div>
+  <div class="s-card emerald">
+   <span class="label">تەمام بووینە</span>
+   <span class="value">{stats.completed}</span>
+  </div>
+  <div class="s-card indigo">
+   <span class="label">داهاتێ ئەڤرۆ</span>
+   <span class="value">${stats.todayIncome}</span>
+  </div>
  </div>
 
- <div class="main-grid">
-  <!-- ٢. کورتیا قازانج و داهاتی -->
-  <div class="card glass">
-   <h3>📈 کورتیا قازانجا سافی</h3>
-   <h2 class="profit-val" style="color: {stats.profit >= 0 ? '#10b981' : '#f43f5e'}">${stats.profit}</h2>
-   <div class="mini-stats"><div class="m-row"><span>داهات (+)</span> <b style="color:#10b981">${stats.totalInc}</b></div>
-    <div class="m-row"><span>خەرجی (-)</span> <b style="color:#f43f5e">${stats.totalExp}</b></div>
+ <div class="dashboard-grid">
+  <!-- 🗓️ لایێ چەپێ: لیستا زیندی یا ئەڤرۆ (The Queue) -->
+  <section class="card main-box">
+   <div class="section-head">
+    <h3>📅 نەخۆشێن ئەڤرۆ (Queue)</h3>
+    <button class="refresh-btn" onclick={loadDashboardData}>🔄</button>
    </div>
-   
-   <!-- ڕاپۆرتێن واتساپێ لێرە زێدە بوون -->
-   <div class="report-actions">
-    <h4>فرێکرنا ڕاپۆرتێ بۆ واتساپێ:</h4>
-    <div class="btn-group">
-     <button class="wa-btn" onclick={() => sendWhatsapp('daily')}>📱 ڕۆژانە</button>
-     <button class="wa-btn" onclick={() => sendWhatsapp('monthly')}>📊 مەهانە</button>
-    </div>
-   </div>
-  </div>
-
-  <!-- ٣. نویترین سەرەدانێن نەخۆشان -->
-  <div class="card glass">
-   <h3>🕒 نویترین چالاکی</h3>
-   <div class="activity-list">
-    {#each recentVisits as v}
-     <div class="v-row">
-      <span>👤 {v.patients?.name || 'Patient'}</span>
-      <b style="color:#10b981">+${v.fee}</b>
+   <div class="queue-list">
+    {#each todayApps as app}
+     <div class="queue-item {app.status === 'Done' ? 'done' : ''}"><div class="time">{new Date(app.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
+      <div class="p-info">
+       <b>{app.patient_name}</b>
+       <span class="badge {app.status}">{app.status}</span>
+      </div>
+      <button class="btn-action" onclick={() => goto('/appointments')}>➡️</button>
      </div>
     {:else}
-     <p class="empty">چو داتا نینن.</p>
+     <div class="empty-state">چو ژڤان بۆ ئەڤرۆ نەهاتینە تۆمارکرن.</div>
     {/each}
    </div>
-  </div>
+  </section>
+
+  <!-- 📜 لایێ ڕاستێ: کورتیا دارایی یا ئەڤرۆ -->
+  <section class="card main-box">
+   <h3>💰 کورتیا دارایی یا ئەڤرۆ</h3>
+   <div class="finance-list">
+    <div class="f-row">
+     <span>کۆما داهاتێ ئەڤرۆ:</span>
+     <b style="color: #10b981;">+${stats.todayIncome}</b>
+    </div>
+    <div class="f-row">
+     <span>کۆما خەرجییێن ئەڤرۆ:</span>
+     <b style="color: #ef4444;">-${stats.todayExpenses}</b>
+    </div>
+    <div class="f-total">
+     <span>قازانجا سافی:</span>
+     <h2 style="color: {stats.todayIncome - stats.todayExpenses >= 0 ? '#10b981' : '#ef4444'}">
+      ${stats.todayIncome - stats.todayExpenses}
+     </h2>
+    </div>
+   </div>
+  </section>
  </div>
 </div>
 
 <style>
- .dashboard { color: var(--text); padding: 10px; font-family: sans-serif; }
- .dash-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; }
- .refresh-btn { background: #f3f4f6; border: 1px solid #ddd; padding: 8px 15px; border-radius: 10px; cursor: pointer; color: #333; font-weight: bold; }
-
- .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 30px; }
- .stat-card { padding: 25px; border-radius: 20px; color: white; text-align: center; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }
- .blue { background: #4f46e5; } .green { background: #10b981; } .indigo { background: #6366f1; } .red { background: #f43f5e; }
- .stat-card h3 { margin: 10px 0 0; font-size: 2rem; font-weight: 800; }
- .stat-card p { margin: 0; font-size: 0.8rem; font-weight: bold; opacity: 0.8; text-transform: uppercase; }
-
- .main-grid { display: grid; grid-template-columns: 1fr 1.5fr; gap: 25px; }
- @media (max-width: 900px) { .main-grid { grid-template-columns: 1fr; } }
+ .pro-dashboard { padding: 15px; color: var(--text); font-family: sans-serif; }
  
- .card { background: var(--card, white); padding: 25px; border-radius: 25px; border: 1px solid var(--border, #eee); }
- .profit-val { font-size: 3rem; font-weight: 900; text-align: center; margin: 15px 0; }
- .m-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid rgba(0,0,0,0.05); }
-
- .report-actions { margin-top: 25px; padding-top: 20px; border-top: 2px dashed #eee; }
- .report-actions h4 { font-size: 0.9rem; margin-bottom: 15px; opacity: 0.7; }
- .btn-group { display: flex; gap: 10px; }
- .wa-btn { flex: 1; background: #25d366; color: white; border: none; padding: 12px; border-radius: 12px; cursor: pointer; font-weight: bold; transition: 0.3s; }
- .wa-btn:hover { transform: translateY(-2px); box-shadow: 0 5px 10px rgba(37, 211, 102, 0.3); }
-
- .v-row { display: flex; justify-content: space-between; padding: 12px; background: rgba(0,0,0,0.03); border-radius: 12px; margin-bottom: 10px; }
+ .top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; flex-wrap: wrap; gap: 20px; }
+ .welcome h1 { font-size: 1.8rem; font-weight: 900; color: #4f46e5; margin: 0; }
  
- :global(.dark-mode) .card, :global(.dark-mode) .v-row { background: #1e293b; border-color: #334155; color: white; }
+ .whatsapp-btn { background: #25d366; color: white; border: none; padding: 12px 20px; border-radius: 50px; cursor: pointer; font-weight: bold; transition: 0.3s; box-shadow: 0 4px 15px rgba(37, 211, 102, 0.3); }
+ .whatsapp-btn:hover { transform: scale(1.05); }
+
+ .stats-grid { display: flex; gap: 15px; margin-bottom: 30px; }
+ .s-card { flex: 1; background: var(--card, white); padding: 20px; border-radius: 20px; border: 1px solid var(--border, #eee); text-align: center; }
+ .s-card .label { display: block; font-size: 0.75rem; font-weight: bold; opacity: 0.5; text-transform: uppercase; margin-bottom: 5px; }
+ .s-card .value { font-size: 1.8rem; font-weight: 900; }
+ .blue { border-bottom: 5px solid #3b82f6; }
+ .amber { border-bottom: 5px solid #f59e0b; }
+ .emerald { border-bottom: 5px solid #10b981; }
+ .indigo { border-bottom: 5px solid #6366f1; }
+
+ .dashboard-grid { display: grid; grid-template-columns: 1.5fr 1fr; gap: 25px; }
+ @media (max-width: 900px) { .dashboard-grid { grid-template-columns: 1fr; } }
+
+ .card { background: var(--card, white); border-radius: 24px; padding: 30px; border: 1px solid var(--border, #eee); }
+ .section-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+
+ .queue-item { display: flex; align-items: center; gap: 15px; padding: 15px; background: rgba(0,0,0,0.02); border-radius: 18px; margin-bottom: 10px; }
+ .queue-item.done { opacity: 0.5; }
+ .time { font-weight: 900; color: #4f46e5; font-size: 0.9rem; }
+ .p-info { flex: 1; }
+ .badge { font-size: 0.65rem; padding: 2px 8px; border-radius: 10px; font-weight: bold; }
+ .badge.Pending { background: #fef3c7; color: #92400e; }
+ .badge.Done { background: #dcfce7; color: #166534; }
+
+ .finance-list { display: flex; flex-direction: column; gap: 15px; }
+ .f-row { display: flex; justify-content: space-between; font-size: 1rem; padding-bottom: 10px; border-bottom: 1px solid rgba(0,0,0,0.05); }
+ .f-total { text-align: center; margin-top: 20px; }
+ .f-total h2 { font-size: 2.5rem; margin: 5px 0; }
+
+ .btn-refresh { background: none; border: none; cursor: pointer; font-size: 1.2rem; }
+ .btn-action { background: #eee; border: none; padding: 5px 10px; border-radius: 8px; cursor: pointer; }
+
+ :global(.dark-mode) .card { background: #1e293b; border-color: #334155; }
+ :global(.dark-mode) .queue-item { background: #0f172a; }
 </style>
