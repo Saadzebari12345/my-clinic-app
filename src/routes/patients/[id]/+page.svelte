@@ -81,21 +81,169 @@
   }
  }
 
- function printRx(record: MedicalRecord) {
-  const win = window.open('', '', 'width=900,height=1000');
-  win?.document.write(`
-   <div style="font-family:sans-serif; padding:50px; border:2px solid #4f46e5; border-radius:15px;">
-    <h1 style="text-align:center; color:#4f46e5;">E-CLINIC MEDICAL REPORT</h1>
-    <p style="text-align:center;"><b>Dr. ${doctorInfo?.doctor_name || 'Specialist'}</b></p>
-    <hr>
-    <p><b>Patient:</b> ${patientInfo?.name} | <b>Date:</b> ${new Date(record.created_at).toLocaleDateString('en-GB')}</p>
-    <p><b>Mobile:</b> ${patientInfo?.phone || 'N/A'}</p>
-    <h3>Diagnosis:</h3><p>${record.diagnosis}</p>
-    <h3>Treatment:</h3><p style="white-space:pre-line;">${record.treatment}</p>
-    <div style="margin-top:50px; text-align:right;">Signature: _________________</div>
-   </div>
-  `);
-  win?.document.close(); win?.print();
+ // 🖨️ فانکشنا چاپکرنا پڕۆفیشناڵ (Official A4 Medical Report)
+ async function printRx(record: MedicalRecord) {
+  // ١. ئینانا زانیاریێن فەرمی یێن دکتۆری ژ داتابەیسێ پێش چاپکرنێ
+  const { data: doc } = await supabase.from('doctors').select('*').eq('id', doctorId).single();
+  
+  const win = window.open('', '', 'width=900,height=1100');
+  
+  const html = `
+   <html>
+   <head>
+    <title>Prescription - ${patientInfo?.name}</title>
+    <style>
+     @page { size: A4; margin: 15mm; }
+     body { font-family: 'Segoe UI', Arial, sans-serif; color: #1a1a1a; margin: 0; padding: 0; background: white; }
+     
+     /* چوارگۆشەیا سەرەکی یا وەرەقەی */
+     .page-border { 
+      border: 3px solid #4f46e5; 
+      padding: 40px; 
+      height: 94vh; 
+      border-radius: 20px; 
+      position: relative; 
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+     }
+     
+     /* سەرێ وەرەقەی (Clinic Info) */
+     .header { 
+      display: flex; 
+      justify-content: space-between; 
+      border-bottom: 4px solid #4f46e5; 
+      padding-bottom: 20px; 
+      margin-bottom: 30px; 
+     }
+     .clinic-title { font-size: 32px; font-weight: 900; color: #4f46e5; margin: 0; text-transform: uppercase; }
+     .doctor-name { font-size: 22px; font-weight: bold; margin: 8px 0; color: #374151; }
+     .contact-info { text-align: right; font-size: 14px; color: #4b5563; line-height: 1.5; }
+     
+     /* زانیاریێن نەخۆشی (Patient Bar) */
+     .patient-info { 
+      background: #f8fafc; 
+      padding: 20px; 
+      border-radius: 12px; 
+      display: grid; 
+      grid-template-columns: 1.2fr 0.8fr; 
+      gap: 15px; 
+      border: 1px solid #e2e8f0; 
+      margin-bottom: 30px; 
+      font-size: 15px; 
+     }
+     .patient-info b { color: #4f46e5; }
+     
+     /* نیشانێن ژیانێ (Vitals) */
+     .vitals-bar { 
+      background: #f1f5f9; 
+      padding: 12px; 
+      border-radius: 8px; 
+      font-weight: bold; 
+      text-align: center; 
+      margin-bottom: 30px; 
+      font-size: 14px;
+      color: #334155;
+     }
+
+     /* ناڤەرۆکا پزیشکی (Diagnosis & Rx) */
+     .rx-symbol { font-size: 70px; font-weight: 900; color: #4f46e5; font-style: italic; margin-bottom: 5px; opacity: 0.8; }
+     .main-content { flex-grow: 1; font-size: 19px; line-height: 1.8; }
+     .section-label { 
+      font-size: 14px; 
+      text-transform: uppercase; 
+      color: #64748b; 
+      border-bottom: 1px solid #e2e8f0; 
+      margin-bottom: 10px; 
+      padding-bottom: 5px; 
+      font-weight: bold; 
+     }
+     .data-text { margin-bottom: 35px; white-space: pre-line; color: #1f2937; }
+
+     /* خوارێ (Footer) */
+     .footer { 
+      border-top: 1px solid #e2e8f0; 
+      padding-top: 20px; 
+      display: flex; 
+      justify-content: space-between; 
+      font-size: 12px; 
+      color: #94a3b8; 
+     }
+     .sig-box { 
+      text-align: center; 
+      width: 220px; 
+      border-top: 2px solid #1f2937; 
+      padding-top: 8px; 
+      font-weight: bold; 
+      color: #1f2937; 
+     }
+    </style>
+   </head>
+   <body>
+    <div class="page-border">
+     <!-- ١. زانیاریێن کلینیکێ -->
+     <div class="header">
+      <div>
+       <h1 class="clinic-title">${doc?.clinic_name || 'E-CLINIC CENTER'}</h1>
+       <p class="doctor-name">Dr. ${doc?.doctor_name || 'Specialist'}</p>
+      </div>
+      <div class="contact-info">
+       ${doc?.clinic_address || 'Clinic Location'}<br>
+       Tel: ${doc?.clinic_phone || 'Contact Info'}
+      </div>
+     </div>
+
+     <!-- ٢. زانیاریێن نەخۆشی -->
+     <div class="patient-info">
+      <div>
+       <div><b>Patient Name:</b> ${patientInfo?.name}</div>
+       <div style="margin-top:8px;"><b>Age / Gender:</b> ${patientInfo?.age}Y / ${patientInfo?.gender || 'N/A'}</div>
+      </div>
+      <div style="text-align: right;">
+       <div><b>Date:</b> ${new Date(record.created_at).toLocaleDateString('en-GB')}</div>
+       <div style="margin-top:8px;"><b>Phone:</b> ${patientInfo?.phone || 'N/A'}</div>
+      </div>
+     </div>
+
+     <!-- ٣. نیشانێن ژیانێ (Vitals) -->
+     <div class="vitals-bar">
+      Vitals: &nbsp; BP: ${record.bp || '--'} &nbsp; | &nbsp; Temp: ${record.temp || '--'}°C &nbsp; | &nbsp; Weight: ${record.weight || '--'}kg
+     </div>
+
+     <!-- ٤. ڕەچەتە (Rx) -->
+     <div class="main-content">
+      <div class="rx-symbol">R𝓍</div>
+      
+      <div class="section-label">Diagnosis / Clinical Findings</div>
+      <div class="data-text">${record.diagnosis}</div>
+      
+      <div class="section-label">Treatment & Prescription</div>
+      <div class="data-text">${record.treatment}</div>
+
+      ${record.notes ? `
+       <div class="section-label">Additional Instructions</div>
+       <div class="data-text" style="font-size: 15px; color: #4b5563;">${record.notes}</div>
+      ` : ''}
+     </div>
+
+     <!-- ٥. دووماهی -->
+     <div class="footer">
+      <div>System ID: #${patientInfo?.id} | Digitalized via E-Clinic Pro</div>
+      <div class="sig-box">Doctor's Signature & Stamp</div>
+     </div>
+    </div>
+    <script>
+     window.onload = function() {
+      window.print();
+      window.onafterprint = function() { window.close(); };
+     };
+    <\/script>
+   </body>
+   </html>
+  `;
+  
+  win?.document.write(html);
+  win?.document.close();
  }
 </script>
 
